@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Perlin Wave — Amplitude Control</title>
+  <style>
+    :root { --bg:#0b0d10; --panel:#f6f7f9; --text:#111; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; overflow-y: auto; }
+    body { font-family: ui-sans-serif, system-ui; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; padding: 20px 0; }
+    .wrap { width: min(95vw, 1600px); }
+    .panel { background: var(--panel); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 18px 24px; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+    .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; width: 100%; }
+    .control { background: white; border-radius: 12px; padding: 10px 14px; border: 1px solid #e5e7eb; }
+    .control label { display:block; font-size: 13px; font-weight: 500; color:#334155; margin-bottom: 6px; }
+    .desc { font-size: 11px; color:#64748b; margin-top: 6px; }
+    .control input[type="range"] { width: 100%; }
+    .btns { display:flex; flex-wrap: wrap; gap:10px; justify-content:center; }
+    button { appearance: none; border: 0; padding: 10px 16px; border-radius: 12px; background: #111827; color: #fff; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 14px; }
+    button.secondary { background: #374151; }
+    .stage { margin-top: 20px; background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.35); display: flex; justify-content: center; }
+    canvas { display:block; margin:auto; border-radius: 12px; max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="controls">
+        <div class="control">
+          <label>Frame rate (<span id="fpsVal">60</span> fps)</label>
+          <input id="fps" type="range" min="1" max="120" step="1" value="60">
+        </div>
+        <div class="control">
+          <label>Lines (<span id="linesVal">60</span>)</label>
+          <input id="lines" type="range" min="1" max="200" step="1" value="60">
+        </div>
+        <div class="control">
+          <label>Stroke weight (<span id="swVal">1</span>)</label>
+          <input id="sw" type="range" min="1" max="8" step="1" value="1">
+        </div>
+        <div class="control">
+          <label>Noise speed (<span id="spdVal">0.010</span>)</label>
+          <input id="speed" type="range" min="0" max="200" step="1" value="10">
+          <div class="desc">Range 0.000–0.200</div>
+        </div>
+        <div class="control">
+          <label>Noise scale (<span id="nscVal">0.030</span>)</label>
+          <input id="nscale" type="range" min="0" max="100" step="1" value="30">
+          <div class="desc">Range 0.000–0.100</div>
+        </div>
+        <div class="control">
+          <label>Amplitude (%) (<span id="ampVal">100</span>%)</label>
+          <input id="amp" type="range" min="1" max="100" step="1" value="100">
+          <div class="desc">Controls vertical wave height</div>
+        </div>
+        <div class="control">
+          <label>Sample step (px) (<span id="stpVal">10</span>)</label>
+          <input id="step" type="range" min="2" max="40" step="1" value="10">
+          <div class="desc">Smaller = more detail</div>
+        </div>
+      </div>
+      <div class="btns">
+        <button id="toggle">Pause</button>
+        <button id="snap" class="secondary">Save PNG</button>
+        <button id="reroll" class="secondary">Reroll Seed</button>
+        <button id="fullscreen" class="secondary">Fullscreen</button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div id="sketch"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <script>
+    (function(){
+      const ui = {
+        fps: document.getElementById('fps'), lines: document.getElementById('lines'), sw: document.getElementById('sw'),
+        speed: document.getElementById('speed'), nscale: document.getElementById('nscale'), step: document.getElementById('step'), amp: document.getElementById('amp'),
+        fpsVal: document.getElementById('fpsVal'), linesVal: document.getElementById('linesVal'), swVal: document.getElementById('swVal'),
+        spdVal: document.getElementById('spdVal'), nscVal: document.getElementById('nscVal'), stpVal: document.getElementById('stpVal'), ampVal: document.getElementById('ampVal'),
+        toggle: document.getElementById('toggle'), snap: document.getElementById('snap'), reroll: document.getElementById('reroll'), fullscreen: document.getElementById('fullscreen')
+      };
+
+      function debounce(fn, wait){ let t; return function(){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,arguments),wait); }}
+
+      const getWH = () => Math.min(window.innerWidth*0.9, window.innerHeight*0.9);
+
+      const Sketch = (p) => {
+        let yOffset=0, size=800, constraints=[0,0], paused=false, seed=Math.floor(Math.random()*1e9);
+
+        const params = () => ({
+          fps:+ui.fps.value,
+          lines:+ui.lines.value,
+          sw:+ui.sw.value,
+          speed:+ui.speed.value/1000,  // 0..200 -> 0.000..0.200
+          nscale:+ui.nscale.value/1000, // 0..100 -> 0.000..0.100
+          amp:+ui.amp.value/100,        // 1..100 -> 0.01..1.00 amplitude scale
+          step:+ui.step.value
+        });
+
+        const updateLabels=()=>{ const pr=params(); ui.fpsVal.textContent=pr.fps; ui.linesVal.textContent=pr.lines; ui.swVal.textContent=pr.sw; ui.spdVal.textContent=pr.speed.toFixed(3); ui.nscVal.textContent=pr.nscale.toFixed(3); ui.stpVal.textContent=pr.step; ui.ampVal.textContent=Math.round(pr.amp*100); };
+        const resize=()=>{size=Math.floor(getWH()); constraints=[size*0.1,size*0.9]; p.resizeCanvas(size*1.4,size*0.8);};
+
+        p.setup=()=>{size=Math.floor(getWH()); constraints=[size*0.1,size*0.9]; const c=p.createCanvas(size*1.4,size*0.8); c.parent('sketch'); p.noFill(); p.frameRate(params().fps); p.randomSeed(seed); updateLabels();};
+        p.windowResized=debounce(()=>{resize();},200);
+
+        [ui.fps,ui.lines,ui.sw,ui.speed,ui.nscale,ui.step,ui.amp].forEach(inp=>inp.addEventListener('input',()=>{ updateLabels(); }));
+        ui.fps.addEventListener('input',()=>p.frameRate(params().fps));
+
+        ui.toggle.addEventListener('click',()=>{paused=!paused; ui.toggle.textContent=paused?'Resume':'Pause';});
+        ui.snap.addEventListener('click',()=>p.saveCanvas('perlin-wave','png'));
+        ui.reroll.addEventListener('click',()=>{seed=Math.floor(Math.random()*1e9); p.randomSeed(seed);});
+        ui.fullscreen.addEventListener('click',()=>{if(!document.fullscreenElement){document.documentElement.requestFullscreen();}else{document.exitFullscreen();}});
+
+        p.mouseClicked=()=>{if(p.mouseX>=0&&p.mouseX<=p.width&&p.mouseY>=0&&p.mouseY<=p.height){yOffset+=0.25;}};
+
+        p.draw=()=>{
+          const {fps,lines,sw,speed,nscale,step,amp}=params(); if(paused)return;
+          if(Math.abs(p.getTargetFrameRate()-fps)>0.5)p.frameRate(fps);
+          p.background(255);
+          p.stroke(0,0,0,230); p.strokeWeight(10); p.rect(constraints[0], constraints[0], p.width-constraints[0]*2, p.height-constraints[0]*2);
+          p.stroke(0,0,0,100); p.strokeWeight(sw);
+          let baseYOffset=yOffset;
+          for(let j=0;j<lines;j++){
+            p.beginShape(); let xOff=0;
+            const mid=(constraints[0]+p.height-constraints[0])/2;
+            const amplitude=(p.height-constraints[0]*2)/2*amp;
+            for(let x=constraints[0];x<=p.width-constraints[0]+step/2;x+=step){
+              const y=mid + p.map(p.noise(xOff,baseYOffset),0,1,-amplitude,amplitude);
+              p.vertex(x,y); xOff+=nscale;
+            }
+            p.endShape(); baseYOffset+=nscale;
+          }
+          yOffset+=speed;
+        };
+      };
+      new p5(Sketch);
+    })();
+  </script>
+</body>
+</html>
