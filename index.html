@@ -1,23 +1,393 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bertie Pleass</title>
-  </head>
-  <nav>
-  <a href="/">Home</a>
-  <a href="/perlin.html">Perline Wave</a>
-  <a href="/lyapunov.html">Lyapunov Exponent</a>
-  <a href="/about.html">About</a>
-</nav>
-  <body>
-    <h1>Bertie Pleass</h1>
-    <a href="perlin.html">Perlin Waves</a><br>
-    <a href="clifford.html">Clifford Attractor generator</a><br>
-    <a href="/lyapunov.html">Lyapunov Exponent</a><br><br>
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bertie Pleass — Clifford Landing</title>
 
-    <a href="https://bertie-pleass.squarespace.com/">Old lighting Website</a><br>
-    <a href="https://cargocollective.com/bertiepleass">Old Objects Website</a><br>
-  </body>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #attractor-plot {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* --- Landing page overlay UI --- */
+    #site-ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none; /* allow plot interaction by default */
+      z-index: 10000;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    #menuButton {
+      pointer-events: auto;
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .menu-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+    }
+
+    .menu-panel {
+      pointer-events: auto;
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      width: min(360px, calc(100vw - 28px));
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+      transform: translateY(-8px);
+      opacity: 0;
+      transition: opacity 220ms ease, transform 220ms ease;
+      display: none; /* hidden until opened */
+      overflow: hidden;
+    }
+
+    .menu-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 14px 10px;
+    }
+
+    .menu-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    .menu-close {
+      border: 0;
+      background: transparent;
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 6px 8px;
+      border-radius: 10px;
+    }
+
+    .menu-close:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .menu-links {
+      display: flex;
+      flex-direction: column;
+      padding: 6px 14px 14px;
+      gap: 10px;
+    }
+
+    .menu-links a {
+      color: #111;
+      text-decoration: none;
+      font-size: 14px;
+      padding: 10px 10px;
+      border-radius: 10px;
+      transition: background 160ms ease;
+    }
+
+    .menu-links a:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .menu-divider {
+      height: 1px;
+      background: rgba(0, 0, 0, 0.12);
+      margin: 6px 0;
+    }
+
+    .menu-hint {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+      padding: 0 14px 14px;
+      line-height: 1.35;
+    }
+
+    /* Open state */
+    body.menu-open .menu-panel {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    body.menu-open .menu-backdrop {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Small screens: move button slightly inwards */
+    @media (max-width: 480px) {
+      #menuButton {
+        top: 10px;
+        right: 10px;
+      }
+      .menu-panel {
+        top: 10px;
+        right: 10px;
+        width: calc(100vw - 20px);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="attractor-plot"></div>
+
+  <!-- Overlay UI -->
+  <div id="site-ui">
+    <button id="menuButton" aria-expanded="false" aria-controls="menuPanel" title="Menu">
+      ☰
+    </button>
+
+    <div id="menuPanel" class="menu-panel" role="menu" aria-hidden="true">
+      <div class="menu-header">
+        <div class="menu-title">Bertie Pleass</div>
+        <button id="closeMenu" class="menu-close" aria-label="Close menu">×</button>
+      </div>
+
+      <nav class="menu-links">
+        <a href="perlin.html">Perlin Waves</a>
+        <a href="clifford.html">Clifford Attractor Generator</a>
+        <a href="lyapunov.html">Lyapunov Exponent</a>
+
+        <div class="menu-divider"></div>
+
+        <a href="https://bertie-pleass.squarespace.com/" target="_blank" rel="noopener">Old lighting website ↗</a>
+        <a href="https://cargocollective.com/bertiepleass" target="_blank" rel="noopener">Old objects website ↗</a>
+      </nav>
+
+      <div class="menu-hint">Tip: press <b>Esc</b> to close. Click outside to dismiss.</div>
+    </div>
+
+    <div id="menuBackdrop" class="menu-backdrop" aria-hidden="true"></div>
+  </div>
+
+  <script>
+    // Clifford Attractor Function
+    function cliffordAttractor(a, b, c, d, x, y) {
+      return {
+        x: Math.sin(a * y) + c * Math.cos(a * x),
+        y: Math.sin(b * x) + d * Math.cos(b * y),
+      };
+    }
+
+    // Initial parameters for the attractor
+    let initParams = { a: 1.5, b: -1.8, c: 1.6, d: 0.9 };
+    let params = { ...initParams };
+
+    // Generate slightly altered parameters
+    function alterParameters(a, b, c, d) {
+      const factor = () => 0.9 + Math.random();
+      return { a: a * factor(), b: b * factor(), c: c * factor(), d: d * factor() };
+    }
+
+    // Controls
+    let numberOfPoints = 2000000;
+    let minBatchSize = 1000;
+    let maxBatchSize = 5000;
+    let timeoutInterval = 10;
+
+    // Layout with disabled hover
+    let layout = {
+      xaxis: { showgrid: false, zeroline: false, showline: false, showticklabels: false, ticks: "" },
+      yaxis: { showgrid: false, zeroline: false, showline: false, showticklabels: false, ticks: "" },
+      margin: { l: 10, r: 10, b: 10, t: 10 },
+      hovermode: false,
+      autosize: true,
+    };
+
+    let isPaused = false;
+    let animationTimeout;
+    let currentIndex = 0;
+    let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+
+    function flashScreen(callback) {
+      const blackOverlay = document.createElement("div");
+      blackOverlay.style.position = "fixed";
+      blackOverlay.style.top = 0;
+      blackOverlay.style.left = 0;
+      blackOverlay.style.width = "100%";
+      blackOverlay.style.height = "100%";
+      blackOverlay.style.backgroundColor = "black";
+      blackOverlay.style.zIndex = 9999;
+      blackOverlay.style.pointerEvents = "none";
+      document.body.appendChild(blackOverlay);
+
+      setTimeout(() => {
+        document.body.removeChild(blackOverlay);
+        if (typeof callback === "function") callback();
+      }, 350);
+    }
+
+    // Start animation (uses a Worker to generate points)
+    function startAnimation(params) {
+      flashScreen(() => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const plotContainer = document.getElementById("attractor-plot");
+            plotContainer.innerHTML = "";
+
+            if (window.Worker) {
+              const workerCode = `
+                self.onmessage = function(e) {
+                  const { params, numberOfPoints } = e.data;
+                  let x = 0, y = 0;
+                  let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+                  for (let i = 0; i < numberOfPoints; i++) {
+                    const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
+                    const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
+                    out.x[i] = nx;
+                    out.y[i] = ny;
+                    x = nx; y = ny;
+                  }
+                  self.postMessage(out);
+                }
+              `;
+              const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
+              worker.postMessage({ params, numberOfPoints });
+
+              worker.onmessage = function (e) {
+                data = e.data;
+                Plotly.newPlot(
+                  "attractor-plot",
+                  [{ x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }],
+                  layout,
+                  { displayModeBar: false }
+                );
+                currentIndex = 0;
+                animatePlot();
+                worker.terminate();
+              };
+            } else {
+              generatePoints(params);
+              Plotly.newPlot(
+                "attractor-plot",
+                [{ x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }],
+                layout,
+                { displayModeBar: false }
+              );
+              currentIndex = 0;
+              animatePlot();
+            }
+          });
+        });
+      });
+    }
+
+    function generatePoints(params) {
+      data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+      let x = 0, y = 0;
+      for (let i = 0; i < numberOfPoints; i++) {
+        const p = cliffordAttractor(params.a, params.b, params.c, params.d, x, y);
+        data.x[i] = p.x;
+        data.y[i] = p.y;
+        x = p.x;
+        y = p.y;
+      }
+    }
+
+    function animatePlot() {
+      if (isPaused) return;
+
+      if (currentIndex < numberOfPoints) {
+        const progressRatio = currentIndex / numberOfPoints;
+        const batchSize = Math.floor(minBatchSize + progressRatio * (maxBatchSize - minBatchSize));
+        const pointsToAdd = Math.min(batchSize, numberOfPoints - currentIndex);
+
+        const update = {
+          x: [Array.from(data.x.slice(currentIndex, currentIndex + pointsToAdd))],
+          y: [Array.from(data.y.slice(currentIndex, currentIndex + pointsToAdd))],
+        };
+
+        Plotly.extendTraces("attractor-plot", update, [0]);
+        currentIndex += pointsToAdd;
+
+        animationTimeout = setTimeout(animatePlot, timeoutInterval);
+      } else {
+        params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
+        startAnimation(params);
+      }
+    }
+
+    // Resize plot on window resize
+    window.addEventListener("resize", () => Plotly.Plots.resize("attractor-plot"));
+
+    // --- Menu overlay wiring ---
+    (function setupMenuOverlay() {
+      const menuButton = document.getElementById("menuButton");
+      const menuPanel = document.getElementById("menuPanel");
+      const menuBackdrop = document.getElementById("menuBackdrop");
+      const closeMenuBtn = document.getElementById("closeMenu");
+
+      function openMenu() {
+        document.body.classList.add("menu-open");
+        menuButton.setAttribute("aria-expanded", "true");
+        menuPanel.setAttribute("aria-hidden", "false");
+        menuBackdrop.setAttribute("aria-hidden", "false");
+      }
+
+      function closeMenu() {
+        document.body.classList.remove("menu-open");
+        menuButton.setAttribute("aria-expanded", "false");
+        menuPanel.setAttribute("aria-hidden", "true");
+        menuBackdrop.setAttribute("aria-hidden", "true");
+      }
+
+      menuButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (document.body.classList.contains("menu-open")) closeMenu();
+        else openMenu();
+      });
+
+      closeMenuBtn.addEventListener("click", closeMenu);
+      menuBackdrop.addEventListener("click", closeMenu);
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeMenu();
+      });
+
+      // Optional: auto-open the menu briefly on first load, then close.
+      setTimeout(() => {
+        openMenu();
+        setTimeout(closeMenu, 1800);
+      }, 900);
+    })();
+
+    // Kick off
+    startAnimation(params);
+  </script>
+</body>
 </html>
+```
