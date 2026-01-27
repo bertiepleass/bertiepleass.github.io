@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clifford LLE Explorer (4D) — Web Workers + Live Slider</title>
+  <style>
+    :root { --bg:#0b0e14; --panel:#121827; --text:#e8edf7; --muted:#98a3b8; --accent:#7dd3fc; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:14px 16px; border-bottom:1px solid #1e2a44; }
+    header h1 { font-size:16px; margin:0 0 6px; font-weight:650; }
+    header p { margin:0; color:var(--muted); font-size:13px; line-height:1.35; }
+    .wrap { display:grid; grid-template-columns: 390px 1fr; gap:12px; padding:12px; }
+    .card { background:var(--panel); border:1px solid #1e2a44; border-radius:14px; padding:12px; box-shadow: 0 6px 18px rgba(0,0,0,0.22); }
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
+    .row { display:flex; gap:10px; }
+    .split { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    select, input[type="number"], input[type="range"], input[type="checkbox"] {
+      width:100%; padding:10px 10px; border-radius:12px; border:1px solid #253454; background:#0f1524; color:var(--text);
+      outline:none;
+    }
+    input[type="range"] { padding: 10px 0; }
+    input[type="checkbox"] { width:auto; padding:0; }
+    button {
+      width:100%; padding:10px 12px; border-radius:12px; border:1px solid #2a3e66; background:#13213a; color:var(--text);
+      cursor:pointer; font-weight:650;
+    }
+    button:hover { border-color:#37558d; }
+    .tiny { font-size:12px; color:var(--muted); line-height:1.35; }
+    .status { margin-top:10px; font-size:12px; color:var(--muted); }
+    .status b { color: var(--accent); }
+    .layers { display:flex; flex-direction:column; gap:10px; }
+    .layer { background:#0f1524; border:1px solid #223255; border-radius:14px; padding:10px; }
+    .layerHead { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:8px; }
+    .layerHead .title { font-size:13px; font-weight:650; }
+    .layerHead .meta { font-size:12px; color:var(--muted); }
+    canvas { width:100%; height:auto; border-radius:10px; image-rendering: pixelated; }
+    .legend { display:flex; align-items:center; gap:10px; margin-top:10px; }
+    .legendBar { width:100%; height:10px; border-radius:999px; background: linear-gradient(90deg,
+      #000004, #1b0c41, #4a0c6b, #781c6d, #a52c60, #cf4446, #ed6925, #fb9b06, #f7d13d, #fcffa4); border:1px solid #243356; }
+    .legendText { font-size:12px; color:var(--muted); display:flex; justify-content:space-between; width:100%; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#0b1222; border:1px solid #243356; color:var(--muted); font-size:12px; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; padding:2px 6px; border:1px solid #243356; border-radius:8px; color:var(--muted); background:#0b1222; }
+    .warn { color:#fbbf24; }
+    .ok { color:#86efac; }
+    .toggle { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Clifford Attractor — Largest Lyapunov Exponent Explorer (4D)</h1>
+  <p>
+    Stacked 2D heatmaps (X vs Y), stacked across a 3rd variable, with a slider for the 4th.
+    Uses a Web Worker pool for multi-core compute + optional live preview while dragging the slider.
+  </p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="row">
+      <div style="flex:1">
+        <label>X axis (2D heatmap)</label>
+        <select id="selX"></select>
+      </div>
+      <div style="flex:1">
+        <label>Y axis (2D heatmap)</label>
+        <select id="selY"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div style="flex:1">
+        <label>Stack depth (layers)</label>
+        <select id="selStack"></select>
+      </div>
+      <div style="flex:1">
+        <label>Slider (single value)</label>
+        <select id="selSlider"></select>
+      </div>
+    </div>
+
+    <label>Ranges (min / max)</label>
+    <div class="split">
+      <div>
+        <div class="pill">a</div>
+        <div class="row">
+          <input id="aMin" type="number" step="0.1" value="-2.5">
+          <input id="aMax" type="number" step="0.1" value="2.5">
+        </div>
+      </div>
+      <div>
+        <div class="pill">b</div>
+        <div class="row">
+          <input id="bMin" type="number" step="0.1" value="-2.5">
+          <input id="bMax" type="number" step="0.1" value="2.5">
+        </div>
+      </div>
+      <div>
+        <div class="pill">c</div>
+        <div class="row">
+          <input id="cMin" type="number" step="0.1" value="-2.0">
+          <input id="cMax" type="number" step="0.1" value="2.0">
+        </div>
+      </div>
+      <div>
+        <div class="pill">d</div>
+        <div class="row">
+          <input id="dMin" type="number" step="0.1" value="-2.0">
+          <input id="dMax" type="number" step="0.1" value="2.0">
+        </div>
+      </div>
+    </div>
+
+    <label>Slider value</label>
+    <input id="sliderVal" type="range" min="0" max="1000" value="500" />
+    <div class="tiny">Current slider: <span class="kbd" id="sliderReadout">—</span></div>
+
+    <div class="toggle">
+      <input id="livePreview" type="checkbox" checked />
+      <div class="tiny">
+        Live preview while dragging (uses <span class="kbd">Preview N</span> / <span class="kbd">Preview Iter</span>)
+      </div>
+    </div>
+
+    <label>Compute settings (final quality)</label>
+    <div class="split">
+      <div>
+        <label style="margin-top:0">Resolution (N × N)</label>
+        <input id="resN" type="number" min="30" max="800" step="10" value="180">
+      </div>
+      <div>
+        <label style="margin-top:0">Stack layers (K)</label>
+        <input id="layersK" type="number" min="1" max="50" step="1" value="8">
+      </div>
+      <div>
+        <label style="margin-top:0">Burn-in</label>
+        <input id="burnIn" type="number" min="0" max="50000" step="500" value="1500">
+      </div>
+      <div>
+        <label style="margin-top:0">Iter (accumulate)</label>
+        <input id="nIter" type="number" min="500" max="500000" step="500" value="6000">
+      </div>
+    </div>
+
+    <label>Live preview settings (during slider drag)</label>
+    <div class="split">
+      <div>
+        <label style="margin-top:0">Preview N</label>
+        <input id="previewN" type="number" min="40" max="400" step="10" value="120">
+      </div>
+      <div>
+        <label style="margin-top:0">Preview Iter</label>
+        <input id="previewIter" type="number" min="500" max="50000" step="500" value="2000">
+      </div>
+    </div>
+
+    <label>Colour scaling (LLE clamp)</label>
+    <div class="row">
+      <input id="lleMin" type="number" step="0.1" value="-1.0" title="Clamp min">
+      <input id="lleMax" type="number" step="0.1" value="1.0" title="Clamp max">
+    </div>
+
+    <label>Workers</label>
+    <div class="row">
+      <input id="numWorkers" type="number" min="1" max="64" step="1">
+      <button id="btnRebuildWorkers" style="max-width:170px">Rebuild pool</button>
+    </div>
+    <div class="tiny">Detected cores: <span class="kbd" id="cores">—</span></div>
+
+    <div style="margin-top:10px" class="row">
+      <button id="btnRender">Render (final quality)</button>
+      <button id="btnCancel" style="max-width:140px">Cancel</button>
+    </div>
+
+    <div style="margin-top:10px" class="row">
+      <button id="btnDownload">Download images (PNGs)</button>
+    </div>
+
+    <div class="status" id="status">Status: <b>idle</b></div>
+
+    <div class="legend">
+      <div style="min-width:46px" class="tiny">LLE</div>
+      <div class="legendBar"></div>
+    </div>
+    <div class="legendText">
+      <span id="legendMin">min</span>
+      <span class="tiny">NaN/diverged shown grey</span>
+      <span id="legendMax">max</span>
+    </div>
+
+    <div class="tiny" style="margin-top:10px">
+      Notes:
+      <ul style="margin:6px 0 0 18px; padding:0">
+        <li>Live preview recomputes while you drag; releasing the slider triggers final render if you want (or use the button).</li>
+        <li>Downloading triggers multiple file downloads (one per layer). Your browser may ask for permission.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="align-items:baseline; justify-content:space-between;">
+      <div>
+        <div style="font-weight:650">Stacked 2D layers</div>
+        <div class="tiny" id="subtitle">—</div>
+      </div>
+      <div class="tiny" id="perf">—</div>
+    </div>
+    <div style="height:10px"></div>
+    <div class="layers" id="layers"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Worker code (inlined as Blob)
+   ============================================================ */
+const workerSource = `
+function cliffordStep(x, y, a, b, c, d) {
+  return [
+    Math.sin(a*y) + c*Math.cos(a*x),
+    Math.sin(b*x) + d*Math.cos(b*y)
+  ];
+}
+function jacobian(x, y, a, b, c, d) {
+  const dxdx = -c*a*Math.sin(a*x);
+  const dxdy =  a*Math.cos(a*y);
+  const dydx =  b*Math.cos(b*x);
+  const dydy = -d*b*Math.sin(b*y);
+  return [dxdx, dxdy, dydx, dydy];
+}
+function largestLyapunov(params, settings) {
+  let x = settings.x0, y = settings.y0;
+  const a = params.a, b = params.b, c = params.c, d = params.d;
+
+  for (let i=0; i<settings.burnIn; i++) {
+    const nxt = cliffordStep(x,y,a,b,c,d);
+    x = nxt[0]; y = nxt[1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return NaN;
+  }
+
+  let vx = 1.0, vy = 0.0;
+  let s = 0.0;
+
+  for (let i=0; i<settings.nIter; i++) {
+    const J = jacobian(x,y,a,b,c,d);
+    const nvx = J[0]*vx + J[1]*vy;
+    const nvy = J[2]*vx + J[3]*vy;
+    vx = nvx; vy = nvy;
+
+    const norm = Math.hypot(vx, vy);
+    if (!Number.isFinite(norm) || norm < 1e-12) return NaN;
+
+    s += Math.log(norm);
+    vx /= norm; vy /= norm;
+
+    const nxt = cliffordStep(x,y,a,b,c,d);
+    x = nxt[0]; y = nxt[1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return NaN;
+  }
+  return s / settings.nIter;
+}
+function linValue(min, max, idx, n) {
+  if (n <= 1) return 0.5*(min+max);
+  return min + (max - min) * (idx / (n - 1));
+}
+self.onmessage = (ev) => {
+  const msg = ev.data;
+  if (msg.type === 'computeTile') {
+    const {
+      jobId, layerIndex, N, yStart, yEnd,
+      X, Y,
+      ranges,
+      paramsBase,
+      settings
+    } = msg;
+
+    const outH = (yEnd - yStart);
+    const out = new Float32Array(outH * N);
+
+    for (let yy = yStart; yy < yEnd; yy++) {
+      const yv = linValue(ranges[Y][0], ranges[Y][1], yy, N);
+      for (let xx = 0; xx < N; xx++) {
+        const xv = linValue(ranges[X][0], ranges[X][1], xx, N);
+
+        const p = { a: paramsBase.a, b: paramsBase.b, c: paramsBase.c, d: paramsBase.d };
+        p[X] = xv;
+        p[Y] = yv;
+
+        out[(yy - yStart)*N + xx] = largestLyapunov(p, settings);
+      }
+    }
+
+    self.postMessage({
+      type: 'tileDone',
+      jobId,
+      layerIndex,
+      yStart,
+      yEnd,
+      buffer: out.buffer
+    }, [out.buffer]);
+  }
+};
+`;
+
+/* ============================================================
+   Main app
+   ============================================================ */
+const PARAMS = ["a","b","c","d"];
+const $ = (id) => document.getElementById(id);
+
+function linspace(min, max, n) {
+  const out = new Float64Array(n);
+  const step = (max - min) / (n - 1);
+  for (let i=0; i<n; i++) out[i] = min + step * i;
+  return out;
+}
+function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function infernoColor(t) {
+  const stops = [
+    [0.0,  0,  0,  4],
+    [0.11, 27, 12, 65],
+    [0.22, 74, 12, 107],
+    [0.33, 120, 28, 109],
+    [0.44, 165, 44, 96],
+    [0.55, 207, 68, 70],
+    [0.66, 237, 105, 37],
+    [0.77, 251, 155, 6],
+    [0.88, 247, 209, 61],
+    [1.0, 252, 255, 164],
+  ];
+  t = clamp(t,0,1);
+  let i=0;
+  while (i < stops.length-1 && t > stops[i+1][0]) i++;
+  const [t0,r0,g0,b0] = stops[i];
+  const [t1,r1,g1,b1] = stops[i+1];
+  const u = (t - t0) / (t1 - t0 + 1e-12);
+  return [
+    Math.round(lerp(r0,r1,u)),
+    Math.round(lerp(g0,g1,u)),
+    Math.round(lerp(b0,b1,u))
+  ];
+}
+function setStatus(html) { $("status").innerHTML = `Status: ${html}`; }
+
+function initSelectors() {
+  const selX = $("selX"), selY = $("selY"), selStack = $("selStack"), selSlider = $("selSlider");
+  function fill(sel) {
+    sel.innerHTML = "";
+    for (const p of PARAMS) {
+      const opt = document.createElement("option");
+      opt.value = p; opt.textContent = p;
+      sel.appendChild(opt);
+    }
+  }
+  fill(selX); fill(selY); fill(selStack); fill(selSlider);
+  selX.value = "a"; selY.value = "b"; selStack.value = "c"; selSlider.value = "d";
+  for (const s of [selX, selY, selStack, selSlider]) s.addEventListener("change", ensureDistinctAndUpdateSubtitle);
+  ensureDistinctAndUpdateSubtitle();
+}
+
+function ensureDistinctAndUpdateSubtitle() {
+  const ids = ["selX","selY","selStack","selSlider"];
+  const sels = ids.map($);
+  const chosen = new Set(sels.map(s=>s.value));
+  if (chosen.size < 4) {
+    const missing = PARAMS.filter(p => !chosen.has(p));
+    const seen = new Map();
+    for (const sel of sels) {
+      const v = sel.value;
+      if (!seen.has(v)) seen.set(v, []);
+      seen.get(v).push(sel);
+    }
+    let mi = 0;
+    for (const [v, arr] of seen.entries()) {
+      if (arr.length > 1) {
+        for (let k=1; k<arr.length; k++) {
+          if (mi < missing.length) arr[k].value = missing[mi++];
+        }
+      }
+    }
+  }
+  updateSliderFromRanges();
+  updateSubtitle();
+  cancelJob();
+  setStatus(`<b>idle</b> (mapping changed; press Render)`);
+}
+
+function getRanges() {
+  return {
+    a: [parseFloat($("aMin").value), parseFloat($("aMax").value)],
+    b: [parseFloat($("bMin").value), parseFloat($("bMax").value)],
+    c: [parseFloat($("cMin").value), parseFloat($("cMax").value)],
+    d: [parseFloat($("dMin").value), parseFloat($("dMax").value)],
+  };
+}
+
+function getParamValueFromSlider(param, ranges) {
+  const [mn, mx] = ranges[param];
+  const t = $("sliderVal").valueAsNumber / 1000.0;
+  return mn + (mx - mn) * t;
+}
+
+function updateSliderFromRanges() {
+  const sliderParam = $("selSlider").value;
+  const ranges = getRanges();
+  const v = getParamValueFromSlider(sliderParam, ranges);
+  $("sliderReadout").textContent = `${sliderParam} = ${v.toFixed(4)}`;
+  $("legendMin").textContent = parseFloat($("lleMin").value).toFixed(2);
+  $("legendMax").textContent = parseFloat($("lleMax").value).toFixed(2);
+}
+
+function updateSubtitle() {
+  const X = $("selX").value, Y = $("selY").value, S = $("selStack").value, Z = $("selSlider").value;
+  const ranges = getRanges();
+  const K = parseInt($("layersK").value, 10);
+  const [sMin, sMax] = ranges[S];
+  const sv = getParamValueFromSlider(Z, ranges);
+  $("subtitle").textContent =
+    `Heatmaps: ${Y} vs ${X} • Stack: ${S} (${K} layers ${sMin}→${sMax}) • Slider: ${Z} = ${sv.toFixed(4)}`;
+}
+
+/* ============================================================
+   Worker pool
+   ============================================================ */
+let workers = [];
+let workerURL = null;
+
+function buildWorkerPool(count) {
+  destroyWorkerPool();
+  const blob = new Blob([workerSource], {type: "application/javascript"});
+  workerURL = URL.createObjectURL(blob);
+
+  for (let i=0; i<count; i++) {
+    const w = new Worker(workerURL);
+    w.onmessage = onWorkerMessage;
+    workers.push({ w, busy:false, id:i });
+  }
+}
+function destroyWorkerPool() {
+  for (const ww of workers) ww.w.terminate();
+  workers = [];
+  if (workerURL) URL.revokeObjectURL(workerURL);
+  workerURL = null;
+}
+
+/* ============================================================
+   Render pipeline (multi-worker)
+   ============================================================ */
+let jobId = 0;
+let jobActive = false;
+let pendingTasks = [];
+let layerGrids = [];   // Float32Array per layer
+let layerMeta = [];    // per layer: {Svalue, Zvalue, baseParams:{a,b,c,d}}
+let canvases = [];
+let tasksTotal = 0;
+let tasksDone = 0;
+let startTime = 0;
+let lastMode = "final"; // "final" | "preview"
+
+function cancelJob() {
+  jobId++;
+  jobActive = false;
+  pendingTasks = [];
+  tasksTotal = 0;
+  tasksDone = 0;
+  $("perf").textContent = "—";
+}
+
+function makeLayerCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+function renderHeatmapToCanvas(canvas, grid, lleMin, lleMax) {
+  const w = canvas.width, h = canvas.height;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+
+  for (let i=0; i<w*h; i++) {
+    const lle = grid[i];
+    let r=0,g=0,b=0,a=255;
+    if (!Number.isFinite(lle)) {
+      r=70; g=70; b=85;
+    } else {
+      const t = (clamp(lle, lleMin, lleMax) - lleMin) / (lleMax - lleMin + 1e-12);
+      const c = infernoColor(t);
+      r=c[0]; g=c[1]; b=c[2];
+    }
+    const j = 4*i;
+    data[j]=r; data[j+1]=g; data[j+2]=b; data[j+3]=a;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function createTasksForCurrentSettings(mode /* "final"|"preview" */) {
+  const X = $("selX").value, Y = $("selY").value, S = $("selStack").value, Z = $("selSlider").value;
+  const ranges = getRanges();
+
+  const N = (mode === "preview") ? parseInt($("previewN").value, 10) : parseInt($("resN").value, 10);
+  const K = parseInt($("layersK").value, 10);
+
+  const burnIn = parseInt($("burnIn").value, 10);
+  const nIter = (mode === "preview") ? parseInt($("previewIter").value, 10) : parseInt($("nIter").value, 10);
+
+  const zVal = getParamValueFromSlider(Z, ranges);
+  const sVals = (K === 1)
+    ? new Float64Array([0.5*(ranges[S][0] + ranges[S][1])])
+    : linspace(ranges[S][0], ranges[S][1], K);
+
+  function mid(p) { return 0.5*(ranges[p][0] + ranges[p][1]); }
+
+  layerGrids = [];
+  layerMeta = [];
+  pendingTasks = [];
+
+  // Chunk rows per task (balance overhead vs load)
+  const ROW_CHUNK = Math.max(2, Math.floor(26 * 180 / Math.max(60, N)));
+
+  for (let k=0; k<K; k++) {
+    layerGrids.push(new Float32Array(N*N));
+
+    const baseParams = { a: mid("a"), b: mid("b"), c: mid("c"), d: mid("d") };
+    baseParams[S] = sVals[k];
+    baseParams[Z] = zVal;
+
+    layerMeta.push({ Svalue: sVals[k], Zvalue: zVal, baseParams });
+
+    for (let y=0; y<N; y += ROW_CHUNK) {
+      const yStart = y;
+      const yEnd = Math.min(N, y + ROW_CHUNK);
+      pendingTasks.push({
+        layerIndex: k,
+        N, yStart, yEnd,
+        X, Y,
+        ranges,
+        paramsBase: baseParams,
+        settings: { x0: 0.1, y0: 0.1, burnIn, nIter }
+      });
+    }
+  }
+
+  return { X, Y, S, Z, ranges, N, K, burnIn, nIter };
+}
+
+function buildLayerUI(N, K, S, Z) {
+  const layersEl = $("layers");
+  layersEl.innerHTML = "";
+  canvases = [];
+  for (let k=0; k<K; k++) {
+    const layer = document.createElement("div");
+    layer.className = "layer";
+
+    const head = document.createElement("div");
+    head.className = "layerHead";
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = `Layer ${k+1}/${K}`;
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${S} = ${layerMeta[k].Svalue.toFixed(4)} • ${Z} = ${layerMeta[k].Zvalue.toFixed(4)} • (${lastMode})`;
+
+    head.appendChild(title);
+    head.appendChild(meta);
+
+    const canvas = makeLayerCanvas(N, N);
+    canvases.push(canvas);
+
+    layer.appendChild(head);
+    layer.appendChild(canvas);
+    layersEl.appendChild(layer);
+  }
+}
+
+function dispatchWork() {
+  if (!jobActive) return;
+
+  for (const ww of workers) {
+    if (!jobActive) return;
+    if (ww.busy) continue;
+
+    const task = pendingTasks.pop();
+    if (!task) return;
+
+    ww.busy = true;
+    ww.w.postMessage({
+      type: "computeTile",
+      jobId,
+      layerIndex: task.layerIndex,
+      N: task.N,
+      yStart: task.yStart,
+      yEnd: task.yEnd,
+      X: task.X,
+      Y: task.Y,
+      ranges: task.ranges,
+      paramsBase: task.paramsBase,
+      settings: task.settings
+    });
+  }
+}
+
+function onWorkerMessage(ev) {
+  const msg = ev.data;
+  if (msg.type !== "tileDone") return;
+
+  for (const ww of workers) {
+    if (ww.w === ev.target) { ww.busy = false; break; }
+  }
+
+  if (msg.jobId !== jobId || !jobActive) {
+    dispatchWork();
+    return;
+  }
+
+  const { layerIndex, yStart, yEnd, buffer } = msg;
+  const N = canvases[0]?.width || parseInt($("resN").value, 10);
+  const tile = new Float32Array(buffer);
+
+  const grid = layerGrids[layerIndex];
+  const outH = yEnd - yStart;
+  for (let oy=0; oy<outH; oy++) {
+    const srcOff = oy * N;
+    const dstOff = (yStart + oy) * N;
+    grid.set(tile.subarray(srcOff, srcOff + N), dstOff);
+  }
+
+  tasksDone++;
+  updateProgressUI();
+
+  // Progressive redraw
+  if (tasksDone % Math.max(3, Math.floor(tasksTotal/18)) === 0) {
+    renderAllCanvases();
+  }
+
+  if (tasksDone >= tasksTotal) {
+    finishJob();
+    return;
+  }
+
+  dispatchWork();
+}
+
+function updateProgressUI() {
+  const pct = Math.round(100 * (tasksDone / Math.max(1, tasksTotal)));
+  setStatus(`<b class="warn">computing…</b> ${pct}% • tiles ${tasksDone}/${tasksTotal} • workers ${workers.length} • mode <b>${lastMode}</b>`);
+}
+
+function renderAllCanvases() {
+  const lleMin = parseFloat($("lleMin").value);
+  const lleMax = parseFloat($("lleMax").value);
+  for (let k=0; k<canvases.length; k++) {
+    renderHeatmapToCanvas(canvases[k], layerGrids[k], lleMin, lleMax);
+  }
+}
+
+function finishJob() {
+  jobActive = false;
+  renderAllCanvases();
+  const seconds = ((performance.now() - startTime) / 1000).toFixed(1);
+  setStatus(`<b class="ok">done</b> • ${tasksTotal} tiles • workers ${workers.length} • mode <b>${lastMode}</b>`);
+  $("perf").textContent = `Render time (${lastMode}): ${seconds}s`;
+}
+
+function startRender(mode /* "final"|"preview" */) {
+  cancelJob();
+  updateSliderFromRanges();
+  updateSubtitle();
+
+  if (workers.length === 0) {
+    setStatus(`<b class="warn">no workers</b> (build pool first)`);
+    return;
+  }
+
+  lastMode = mode;
+  const cfg = createTasksForCurrentSettings(mode);
+  buildLayerUI(cfg.N, cfg.K, $("selStack").value, $("selSlider").value);
+
+  tasksTotal = pendingTasks.length;
+  tasksDone = 0;
+  jobActive = true;
+  startTime = performance.now();
+
+  setStatus(`<b class="warn">computing…</b> 0% • tiles 0/${tasksTotal} • mode <b>${lastMode}</b>`);
+  $("perf").textContent = "—";
+
+  dispatchWork();
+}
+
+/* ============================================================
+   Live slider behaviour
+   - On drag: throttle preview renders
+   - On release: (optional) kick a final render
+   ============================================================ */
+let previewTimer = null;
+let lastPreviewAt = 0;
+const PREVIEW_THROTTLE_MS = 250;
+
+function requestPreviewRender() {
+  if (!$("livePreview").checked) return;
+  const now = performance.now();
+  if (now - lastPreviewAt < PREVIEW_THROTTLE_MS) {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      lastPreviewAt = performance.now();
+      startRender("preview");
+    }, PREVIEW_THROTTLE_MS);
+    return;
+  }
+  lastPreviewAt = now;
+  startRender("preview");
+}
+
+function sliderReleased() {
+  // After drag release, do a final render automatically only if livePreview is on.
+  // (If you’d rather NOT auto-final, comment this out and use the button.)
+  if ($("livePreview").checked) startRender("final");
+}
+
+function attachSliderReleaseEvents() {
+  const s = $("sliderVal");
+  // pointerup covers mouse/touch/pen in modern browsers
+  s.addEventListener("pointerup", sliderReleased);
+  s.addEventListener("change", sliderReleased); // fallback
+}
+
+/* ============================================================
+   Download images (one per layer)
+   Filename: concatenate a,b,c,d values + pixel count at end
+   Example: a-0.0000_b-1.2345_c-0.7000_d--0.2500_layer03_N180.png
+   ============================================================ */
+function safeNum(x) {
+  // fixed width, avoids "+" and trims weirdness
+  const v = Number(x);
+  if (!Number.isFinite(v)) return "NaN";
+  return v.toFixed(4);
+}
+
+function buildFilename(layerIndex) {
+  // Uses the layer's baseParams (midpoints for non-stack/non-slider; stack+slider filled)
+  const N = canvases[layerIndex].width;
+  const p = layerMeta[layerIndex]?.baseParams || {a:0,b:0,c:0,d:0};
+  const a = safeNum(p.a), b = safeNum(p.b), c = safeNum(p.c), d = safeNum(p.d);
+  const layerStr = String(layerIndex + 1).padStart(2, "0");
+  return `a-${a}_b-${b}_c-${c}_d-${d}_layer${layerStr}_N${N}.png`;
+}
+
+async function downloadAllPNGs() {
+  if (!canvases.length) {
+    setStatus(`<b class="warn">nothing to download</b> (render first)`);
+    return;
+  }
+
+  // Some browsers block multiple automatic downloads; this is the simplest no-lib approach.
+  // If you want a single ZIP download, tell me and I’ll add JSZip.
+  setStatus(`<b class="warn">downloading…</b> (${canvases.length} files)`);
+  for (let k=0; k<canvases.length; k++) {
+    const canvas = canvases[k];
+    const filename = buildFilename(k);
+
+    const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    if (!blob) continue;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    // Tiny delay reduces the chance of the browser ignoring subsequent downloads
+    await new Promise(r => setTimeout(r, 120));
+  }
+  setStatus(`<b class="ok">download started</b> (your browser may prompt/allow multiple files)`);
+}
+
+/* ============================================================
+   UI events
+   ============================================================ */
+$("btnRender").addEventListener("click", () => startRender("final"));
+$("btnCancel").addEventListener("click", () => { cancelJob(); setStatus(`<b>idle</b> (cancelled)`); });
+$("btnDownload").addEventListener("click", downloadAllPNGs);
+
+$("sliderVal").addEventListener("input", () => {
+  updateSliderFromRanges();
+  updateSubtitle();
+  requestPreviewRender();
+});
+
+for (const id of ["aMin","aMax","bMin","bMax","cMin","cMax","dMin","dMax","resN","layersK","burnIn","nIter","lleMin","lleMax","previewN","previewIter"]) {
+  $(id).addEventListener("input", () => {
+    updateSliderFromRanges();
+    updateSubtitle();
+    cancelJob();
+    setStatus(`<b>idle</b> (settings changed; press Render)`);
+  });
+}
+
+$("btnRebuildWorkers").addEventListener("click", () => {
+  cancelJob();
+  const n = parseInt($("numWorkers").value, 10);
+  buildWorkerPool(n);
+  setStatus(`<b>idle</b> (worker pool rebuilt: ${n})`);
+});
+
+/* ============================================================
+   Init
+   ============================================================ */
+initSelectors();
+attachSliderReleaseEvents();
+
+const cores = navigator.hardwareConcurrency || 4;
+$("cores").textContent = String(cores);
+const defW = Math.max(1, Math.min(32, cores - 1));
+$("numWorkers").value = String(defW);
+buildWorkerPool(defW);
+
+updateSliderFromRanges();
+updateSubtitle();
+setStatus(`<b>idle</b> (press Render, or drag slider for live preview)`);
+</script>
+</body>
+</html>
