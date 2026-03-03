@@ -175,56 +175,50 @@
 
         // Function to start the animation
         function startAnimation(params) {
-            flashScreen(() => {
-        // Use requestAnimationFrame to ensure that the flash has been rendered
-        requestAnimationFrame(() => {
-            // Now that the first frame is done, request another frame to be 100% sure the browser has rendered it
             requestAnimationFrame(() => {
-                // Now we can safely proceed with heavy tasks, after ensuring the flash was visible
+                requestAnimationFrame(() => {
+                    const plotContainer = document.getElementById('attractor-plot');
+                    plotContainer.innerHTML = ''; // Clear any existing plot
 
-                const plotContainer = document.getElementById('attractor-plot');
-                plotContainer.innerHTML = ''; // Clear any existing plot
+                    // Use web worker for generating points
+                    if (window.Worker) {
+                        let worker = new Worker(URL.createObjectURL(new Blob([`
+                            self.onmessage = function(e) {
+                                const { params, numberOfPoints } = e.data;
+                                let x = 0, y = 0;
+                                let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+                                for (let i = 0; i < numberOfPoints; i++) {
+                                    let point = {
+                                        x: Math.sin(params.a * y) + params.c * Math.cos(params.a * x),
+                                        y: Math.sin(params.b * x) + params.d * Math.cos(params.b * y)
+                                    };
+                                    data.x[i] = point.x;
+                                    data.y[i] = point.y;
+                                    x = point.x;
+                                    y = point.y;
+                                }
+                                self.postMessage(data);
+                            }
+                        `], { type: 'application/javascript' })));
 
-            // Use web worker for generating points
-            if (window.Worker) {
-                let worker = new Worker(URL.createObjectURL(new Blob([`
-                    self.onmessage = function(e) {
-                        const { params, numberOfPoints } = e.data;
-                        let x = 0, y = 0;
-                        let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
-                        for (let i = 0; i < numberOfPoints; i++) {
-                            let point = {
-                                x: Math.sin(params.a * y) + params.c * Math.cos(params.a * x),
-                                y: Math.sin(params.b * x) + params.d * Math.cos(params.b * y)
-                            };
-                            data.x[i] = point.x;
-                            data.y[i] = point.y;
-                            x = point.x;
-                            y = point.y;
-                        }
-                        self.postMessage(data);
+                        worker.postMessage({ params, numberOfPoints });
+
+                        worker.onmessage = function(e) {
+                            data = e.data;
+                            Plotly.newPlot('attractor-plot', [{ x: [], y: [], type: 'pointcloud', marker: { size: 3,color: 'black' } }], layout);
+                            currentIndex = 0;
+                            animatePlot();
+                            worker.terminate(); // Terminate worker to prevent memory leak
+                        };
+                    } else {
+                        generatePoints(params);
+                        Plotly.newPlot('attractor-plot', [{ x: [], y: [], type: 'pointcloud', marker: { size: 3,color: 'black' } }], layout);
+                        currentIndex = 0;
+                        animatePlot();
                     }
-                `], { type: 'application/javascript' })));
-
-                worker.postMessage({ params, numberOfPoints });
-
-                worker.onmessage = function(e) {
-                    data = e.data;
-                    Plotly.newPlot('attractor-plot', [{ x: [], y: [], type: 'pointcloud', marker: { size: 3,color: 'black' } }], layout);
-                    currentIndex = 0;
-                    animatePlot();
-                    worker.terminate(); // Terminate worker to prevent memory leak
-                };
-            } else {
-                generatePoints(params);
-                Plotly.newPlot('attractor-plot', [{ x: [], y: [], type: 'pointcloud', marker: { size: 3,color: 'black' } }], layout);
-                currentIndex = 0;
-                animatePlot();
-            }
-        });
-        });
-    });
-    }
+                });
+            });
+        }
     
 
         function generatePoints(params) {
@@ -264,55 +258,6 @@
             document.getElementById('attractor-plot').style.height = plotHeight + 'px';
             Plotly.relayout('attractor-plot', { width: plotWidth, height: plotHeight });
         }
-        function flashScreen(callback) {
-            // Step 1: Create the black overlay
-            const blackOverlay = document.createElement('div');
-    
-            // Step 2: Style the overlay to cover the whole screen
-            blackOverlay.style.position = 'fixed';
-            blackOverlay.style.top = 0;
-            blackOverlay.style.left = 0;
-            blackOverlay.style.width = '100%';
-            blackOverlay.style.height = '100%';
-            blackOverlay.style.backgroundColor = 'black';
-            blackOverlay.style.zIndex = 9999;  // Ensure it's on top of everything
-            blackOverlay.style.pointerEvents = 'none';  // Don't block user interaction
-
-            // Step 3: Append the overlay to the body
-            document.body.appendChild(blackOverlay);
-
-            // Step 4: Wait for a short time, then remove the overlay
-            setTimeout(() => {
-                // Remove the black overlay from the DOM
-                document.body.removeChild(blackOverlay);
-                // Call the callback function after the flash effect is complete
-                if (typeof callback === 'function') {
-                    callback();
-                }
-            }, 500);  // 200ms flash duration
-        }
-        function flashScreen2(callback) {
-            const bodyElement = document.body;
-            const plotElement = document.getElementById('attractor-plot');
-            const flashCount = 3;  // Number of times to flash
-            const flashInterval = 500;  // Time in milliseconds between flashes
-
-            for (let i = 0; i < flashCount * 2; i++) {
-                setTimeout(() => {
-                    const isBlack = i % 2 === 0; // Alternate between black and white
-                    bodyElement.style.backgroundColor = isBlack ? 'black' : 'white';
-                    plotElement.style.backgroundColor = isBlack ? 'black' : 'white';
-                }, i * flashInterval);
-            }
-            setTimeout(() => {// Restore original background color after flashing
-                bodyElement.style.backgroundColor = '';  // Restore to default
-                plotElement.style.backgroundColor = '';  // Restore to default
-                if (typeof callback === 'function') {
-                    callback(); // Call the callback function after flash is done
-                }
-            }, flashCount * 2 * flashInterval);
-        }  
-
         // Toggle visibility of controls when hamburger icon is clicked
         document.getElementById('icon').addEventListener('click', function() {
             const controlsContainer = document.getElementById('controls-container');
