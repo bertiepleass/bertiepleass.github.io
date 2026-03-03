@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Clifford LLE Explorer (4D) — Web Workers + Live Slider</title>
+  <title>Clifford LLE Explorer (4D) - Web Workers + Live Slider</title>
   <style>
     :root { --bg:#0b0e14; --panel:#121827; --text:#e8edf7; --muted:#98a3b8; --accent:#7dd3fc; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
@@ -48,7 +48,7 @@
 </head>
 <body>
 <header>
-  <h1>Clifford Attractor — Largest Lyapunov Exponent Explorer (4D)</h1>
+  <h1>Clifford Attractor - Largest Lyapunov Exponent Explorer (4D)</h1>
   <p>
     Stacked 2D heatmaps (X vs Y), stacked across a 3rd variable, with a slider for the 4th.
     Uses a Web Worker pool for multi-core compute + optional live preview while dragging the slider.
@@ -113,7 +113,7 @@
 
     <label>Slider value</label>
     <input id="sliderVal" type="range" min="0" max="1000" value="500" />
-    <div class="tiny">Current slider: <span class="kbd" id="sliderReadout">—</span></div>
+    <div class="tiny">Current slider: <span class="kbd" id="sliderReadout">--</span></div>
 
     <div class="toggle">
       <input id="livePreview" type="checkbox" checked />
@@ -125,7 +125,7 @@
     <label>Compute settings (final quality)</label>
     <div class="split">
       <div>
-        <label style="margin-top:0">Resolution (N × N)</label>
+        <label style="margin-top:0">Resolution (N x N)</label>
         <input id="resN" type="number" min="30" max="800" step="10" value="180">
       </div>
       <div>
@@ -165,7 +165,7 @@
       <input id="numWorkers" type="number" min="1" max="64" step="1">
       <button id="btnRebuildWorkers" style="max-width:170px">Rebuild pool</button>
     </div>
-    <div class="tiny">Detected cores: <span class="kbd" id="cores">—</span></div>
+    <div class="tiny">Detected cores: <span class="kbd" id="cores">--</span></div>
 
     <div style="margin-top:10px" class="row">
       <button id="btnRender">Render (final quality)</button>
@@ -201,9 +201,9 @@
     <div class="row" style="align-items:baseline; justify-content:space-between;">
       <div>
         <div style="font-weight:650">Stacked 2D layers</div>
-        <div class="tiny" id="subtitle">—</div>
+        <div class="tiny" id="subtitle">--</div>
       </div>
-      <div class="tiny" id="perf">—</div>
+      <div class="tiny" id="perf">--</div>
     </div>
     <div style="height:10px"></div>
     <div class="layers" id="layers"></div>
@@ -417,7 +417,7 @@ function updateSubtitle() {
   const [sMin, sMax] = ranges[S];
   const sv = getParamValueFromSlider(Z, ranges);
   $("subtitle").textContent =
-    `Heatmaps: ${Y} vs ${X} • Stack: ${S} (${K} layers ${sMin}→${sMax}) • Slider: ${Z} = ${sv.toFixed(4)}`;
+    `Heatmaps: ${Y} vs ${X} - Stack: ${S} (${K} layers ${sMin}->${sMax}) - Slider: ${Z} = ${sv.toFixed(4)}`;
 }
 
 /* ============================================================
@@ -464,7 +464,7 @@ function cancelJob() {
   pendingTasks = [];
   tasksTotal = 0;
   tasksDone = 0;
-  $("perf").textContent = "—";
+  $("perf").textContent = "--";
 }
 
 function makeLayerCanvas(width, height) {
@@ -563,7 +563,7 @@ function buildLayerUI(N, K, S, Z) {
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `${S} = ${layerMeta[k].Svalue.toFixed(4)} • ${Z} = ${layerMeta[k].Zvalue.toFixed(4)} • (${lastMode})`;
+    meta.textContent = `${S} = ${layerMeta[k].Svalue.toFixed(4)} - ${Z} = ${layerMeta[k].Zvalue.toFixed(4)} - (${lastMode})`;
 
     head.appendChild(title);
     head.appendChild(meta);
@@ -647,7 +647,7 @@ function onWorkerMessage(ev) {
 
 function updateProgressUI() {
   const pct = Math.round(100 * (tasksDone / Math.max(1, tasksTotal)));
-  setStatus(`<b class="warn">computing…</b> ${pct}% • tiles ${tasksDone}/${tasksTotal} • workers ${workers.length} • mode <b>${lastMode}</b>`);
+  setStatus(`<b class="warn">computing...</b> ${pct}% - tiles ${tasksDone}/${tasksTotal} - workers ${workers.length} - mode <b>${lastMode}</b>`);
 }
 
 function renderAllCanvases() {
@@ -662,7 +662,7 @@ function finishJob() {
   jobActive = false;
   renderAllCanvases();
   const seconds = ((performance.now() - startTime) / 1000).toFixed(1);
-  setStatus(`<b class="ok">done</b> • ${tasksTotal} tiles • workers ${workers.length} • mode <b>${lastMode}</b>`);
+  setStatus(`<b class="ok">done</b> - ${tasksTotal} tiles - workers ${workers.length} - mode <b>${lastMode}</b>`);
   $("perf").textContent = `Render time (${lastMode}): ${seconds}s`;
 }
 
@@ -685,8 +685,8 @@ function startRender(mode /* "final"|"preview" */) {
   jobActive = true;
   startTime = performance.now();
 
-  setStatus(`<b class="warn">computing…</b> 0% • tiles 0/${tasksTotal} • mode <b>${lastMode}</b>`);
-  $("perf").textContent = "—";
+  setStatus(`<b class="warn">computing...</b> 0% - tiles 0/${tasksTotal} - mode <b>${lastMode}</b>`);
+  $("perf").textContent = "--";
 
   dispatchWork();
 }
@@ -717,7 +717,7 @@ function requestPreviewRender() {
 
 function sliderReleased() {
   // After drag release, do a final render automatically only if livePreview is on.
-  // (If you’d rather NOT auto-final, comment this out and use the button.)
+  // (If you'd rather NOT auto-final, comment this out and use the button.)
   if ($("livePreview").checked) startRender("final");
 }
 
@@ -756,8 +756,8 @@ async function downloadAllPNGs() {
   }
 
   // Some browsers block multiple automatic downloads; this is the simplest no-lib approach.
-  // If you want a single ZIP download, tell me and I’ll add JSZip.
-  setStatus(`<b class="warn">downloading…</b> (${canvases.length} files)`);
+  // If you want a single ZIP download, tell me and I'll add JSZip.
+  setStatus(`<b class="warn">downloading...</b> (${canvases.length} files)`);
   for (let k=0; k<canvases.length; k++) {
     const canvas = canvases[k];
     const filename = buildFilename(k);

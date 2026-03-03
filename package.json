@@ -1,0 +1,14 @@
+{
+  "name": "bertiepleass-github-io",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Smoke tests for static site pages",
+  "scripts": {
+    "test:smoke": "playwright test",
+    "test:smoke:headed": "playwright test --headed",
+    "test:smoke:debug": "playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0"
+  }
+}

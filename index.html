@@ -1,12 +1,11 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bertie Pleass — Clifford Landing</title>
+  <title>Bertie Pleass - Clifford Landing</title>
 
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js" id="plotly-script"></script>
 
   <style>
     body {
@@ -36,6 +35,7 @@
       position: fixed;
       top: 14px;
       right: 14px;
+      z-index: 3;
       width: 44px;
       height: 44px;
       border: 0;
@@ -51,6 +51,7 @@
     .menu-backdrop {
       position: fixed;
       inset: 0;
+      z-index: 1;
       background: rgba(0, 0, 0, 0.35);
       opacity: 0;
       transition: opacity 220ms ease;
@@ -62,6 +63,7 @@
       position: fixed;
       top: 14px;
       right: 14px;
+      z-index: 2;
       width: min(360px, calc(100vw - 28px));
       border-radius: 16px;
       background: rgba(255, 255, 255, 0.92);
@@ -168,13 +170,13 @@
   <!-- Overlay UI -->
   <div id="site-ui">
     <button id="menuButton" aria-expanded="false" aria-controls="menuPanel" title="Menu">
-      ☰
+      &#9776;
     </button>
 
     <div id="menuPanel" class="menu-panel" role="menu" aria-hidden="true">
       <div class="menu-header">
         <div class="menu-title">Bertie Pleass</div>
-        <button id="closeMenu" class="menu-close" aria-label="Close menu">×</button>
+        <button id="closeMenu" class="menu-close" aria-label="Close menu">&times;</button>
       </div>
 
       <nav class="menu-links">
@@ -184,8 +186,8 @@
 
         <div class="menu-divider"></div>
 
-        <a href="https://bertie-pleass.squarespace.com/" target="_blank" rel="noopener">Old lighting website ↗</a>
-        <a href="https://cargocollective.com/bertiepleass" target="_blank" rel="noopener">Old objects website ↗</a>
+        <a href="https://bertie-pleass.squarespace.com/" target="_blank" rel="noopener">Old lighting website -></a>
+        <a href="https://cargocollective.com/bertiepleass" target="_blank" rel="noopener">Old objects website -></a>
       </nav>
 
       <div class="menu-hint">Tip: press <b>Esc</b> to close. Click outside to dismiss.</div>
@@ -213,8 +215,15 @@
       return { a: a * factor(), b: b * factor(), c: c * factor(), d: d * factor() };
     }
 
-    // Controls
-    let numberOfPoints = 2000000;
+    // Controls (use scatter + fewer points when WebGL unavailable; pointcloud requires WebGL)
+    function isWebGLAvailable() {
+      try {
+        var canvas = document.createElement("canvas");
+        return !!(canvas.getContext("webgl") || canvas.getContext("experimental-webgl"));
+      } catch (e) { return false; }
+    }
+    var webglAvailable = isWebGLAvailable();
+    let numberOfPoints = webglAvailable ? 2000000 : 200000;
     let minBatchSize = 1000;
     let maxBatchSize = 5000;
     let timeoutInterval = 10;
@@ -233,75 +242,75 @@
     let currentIndex = 0;
     let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
 
-    function flashScreen(callback) {
-      const blackOverlay = document.createElement("div");
-      blackOverlay.style.position = "fixed";
-      blackOverlay.style.top = 0;
-      blackOverlay.style.left = 0;
-      blackOverlay.style.width = "100%";
-      blackOverlay.style.height = "100%";
-      blackOverlay.style.backgroundColor = "black";
-      blackOverlay.style.zIndex = 9999;
-      blackOverlay.style.pointerEvents = "none";
-      document.body.appendChild(blackOverlay);
-
-      setTimeout(() => {
-        document.body.removeChild(blackOverlay);
-        if (typeof callback === "function") callback();
-      }, 350);
+    function showPlotError(msg) {
+      const plotContainer = document.getElementById("attractor-plot");
+      if (!plotContainer) return;
+      plotContainer.innerHTML = "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui,sans-serif;color:#666;text-align:center;padding:20px;\">" + msg + "</div>";
     }
 
     // Start animation (uses a Worker to generate points)
     function startAnimation(params) {
-      flashScreen(() => {
+      if (typeof Plotly === "undefined") {
+        showPlotError("Chart library still loading... Refresh if this doesn't go away.");
+        return;
+      }
+      requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const plotContainer = document.getElementById("attractor-plot");
-            plotContainer.innerHTML = "";
+          const plotContainer = document.getElementById("attractor-plot");
+          if (!plotContainer) return;
+          plotContainer.innerHTML = "";
 
-            if (window.Worker) {
-              const workerCode = `
-                self.onmessage = function(e) {
-                  const { params, numberOfPoints } = e.data;
-                  let x = 0, y = 0;
-                  let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
-                  for (let i = 0; i < numberOfPoints; i++) {
-                    const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
-                    const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
-                    out.x[i] = nx;
-                    out.y[i] = ny;
-                    x = nx; y = ny;
-                  }
-                  self.postMessage(out);
-                }
-              `;
-              const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
-              worker.postMessage({ params, numberOfPoints });
-
-              worker.onmessage = function (e) {
-                data = e.data;
-                Plotly.newPlot(
-                  "attractor-plot",
-                  [{ x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }],
-                  layout,
-                  { displayModeBar: false }
-                );
+            function initPlot() {
+              try {
+                var trace = webglAvailable
+                  ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
+                  : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
+                Plotly.newPlot("attractor-plot", [trace], layout, { displayModeBar: false });
                 currentIndex = 0;
                 animatePlot();
-                worker.terminate();
-              };
+              } catch (err) {
+                showPlotError("Something went wrong. Try refreshing the page.");
+                console.error(err);
+              }
+            }
+
+            if (window.Worker) {
+              try {
+                const workerCode = `
+                  self.onmessage = function(e) {
+                    const { params, numberOfPoints } = e.data;
+                    let x = 0, y = 0;
+                    let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+                    for (let i = 0; i < numberOfPoints; i++) {
+                      const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
+                      const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
+                      out.x[i] = nx;
+                      out.y[i] = ny;
+                      x = nx; y = ny;
+                    }
+                    self.postMessage(out);
+                  }
+                `;
+                const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
+                worker.onerror = function () {
+                  worker.terminate();
+                  generatePoints(params);
+                  initPlot();
+                };
+                worker.onmessage = function (e) {
+                  data = e.data;
+                  worker.terminate();
+                  initPlot();
+                };
+                worker.postMessage({ params, numberOfPoints });
+              } catch (err) {
+                generatePoints(params);
+                initPlot();
+              }
             } else {
               generatePoints(params);
-              Plotly.newPlot(
-                "attractor-plot",
-                [{ x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }],
-                layout,
-                { displayModeBar: false }
-              );
-              currentIndex = 0;
-              animatePlot();
+              initPlot();
             }
-          });
         });
       });
     }
@@ -320,18 +329,25 @@
 
     function animatePlot() {
       if (isPaused) return;
+      if (typeof Plotly === "undefined") return;
 
-      if (currentIndex < numberOfPoints) {
-        const progressRatio = currentIndex / numberOfPoints;
+      var totalPoints = data.x.length;
+      if (currentIndex < totalPoints) {
+        const progressRatio = currentIndex / totalPoints;
         const batchSize = Math.floor(minBatchSize + progressRatio * (maxBatchSize - minBatchSize));
-        const pointsToAdd = Math.min(batchSize, numberOfPoints - currentIndex);
+        const pointsToAdd = Math.min(batchSize, totalPoints - currentIndex);
 
         const update = {
           x: [Array.from(data.x.slice(currentIndex, currentIndex + pointsToAdd))],
           y: [Array.from(data.y.slice(currentIndex, currentIndex + pointsToAdd))],
         };
 
-        Plotly.extendTraces("attractor-plot", update, [0]);
+        try {
+          Plotly.extendTraces("attractor-plot", update, [0]);
+        } catch (e) {
+          console.error(e);
+          return;
+        }
         currentIndex += pointsToAdd;
 
         animationTimeout = setTimeout(animatePlot, timeoutInterval);
@@ -341,8 +357,40 @@
       }
     }
 
+
     // Resize plot on window resize
-    window.addEventListener("resize", () => Plotly.Plots.resize("attractor-plot"));
+    window.addEventListener("resize", () => {
+      if (typeof Plotly !== "undefined" && document.getElementById("attractor-plot")) {
+        try { Plotly.Plots.resize("attractor-plot"); } catch (e) {}
+      }
+    });
+
+    // Start only when Plotly is ready (avoids race where script runs before CDN finishes)
+    function runWhenReady() {
+      if (typeof Plotly !== "undefined") {
+        startAnimation(params);
+        return;
+      }
+      var elapsed = 0;
+      var maxWait = 15000;
+      var interval = setInterval(function () {
+        elapsed += 200;
+        if (typeof Plotly !== "undefined") {
+          clearInterval(interval);
+          startAnimation(params);
+          return;
+        }
+        if (elapsed >= maxWait) {
+          clearInterval(interval);
+          showPlotError("Chart library didn't load. Check your connection and refresh.");
+        }
+      }, 200);
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", runWhenReady);
+    } else {
+      runWhenReady();
+    }
 
     // --- Menu overlay wiring ---
     (function setupMenuOverlay() {
@@ -350,6 +398,7 @@
       const menuPanel = document.getElementById("menuPanel");
       const menuBackdrop = document.getElementById("menuBackdrop");
       const closeMenuBtn = document.getElementById("closeMenu");
+      if (!menuButton || !menuPanel || !menuBackdrop || !closeMenuBtn) return;
 
       function openMenu() {
         document.body.classList.add("menu-open");
@@ -377,17 +426,7 @@
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") closeMenu();
       });
-
-      // Optional: auto-open the menu briefly on first load, then close.
-      setTimeout(() => {
-        openMenu();
-        setTimeout(closeMenu, 1800);
-      }, 900);
     })();
-
-    // Kick off
-    startAnimation(params);
   </script>
 </body>
 </html>
-```
