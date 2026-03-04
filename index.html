@@ -413,7 +413,7 @@
       return { a: a * factor(), b: b * factor(), c: c * factor(), d: d * factor() };
     }
 
-    // Controls (use scatter + fewer points when WebGL unavailable; pointcloud requires WebGL)
+    // Controls (use WebGL scatter markers when available)
     function isWebGLAvailable() {
       try {
         var canvas = document.createElement("canvas");
@@ -473,7 +473,7 @@
         const frame = animationFrameTrail[i];
         const opacity = trailOpacities[Math.max(0, trailOpacities.length - animationFrameTrail.length + i)] || 0.8;
         traces.push(webglAvailable
-          ? { x: frame.x, y: frame.y, type: "pointcloud", marker: { size: 3, color: "black" }, opacity: opacity }
+          ? { x: frame.x, y: frame.y, type: "scattergl", mode: "markers", marker: { size: 1.4, color: "black" }, opacity: opacity }
           : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", marker: { size: 2, color: "black" }, opacity: opacity });
       }
       return traces;
@@ -605,7 +605,7 @@
               }
 
               var trace = webglAvailable
-                ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
+                ? { x: [], y: [], type: "scattergl", mode: "markers", marker: { size: 1.4, color: "black" } }
                 : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
               Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
                 if (thisRunId !== runId) return;
