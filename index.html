@@ -20,7 +20,7 @@
       position: fixed;
       top: 50%;
       left: 50%;
-      width: 33.333vw;
+      width: 50vw;
       height: 66.666vh;
       transform: translate(-50%, -50%) scale(var(--plot-scale, 1));
       transform-origin: center center;
@@ -167,6 +167,46 @@
       border: 0;
       box-shadow: none;
       padding: 0;
+    }
+
+    .new-pattern-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    #newPatternButton {
+      appearance: none;
+      border: 1px solid #a8a8a8;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #f9f9f9 0%, #d9d9d9 100%);
+      color: #505050;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      line-height: 1;
+      padding: 7px 11px;
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+    }
+
+    #newPatternButton:hover {
+      filter: brightness(1.02);
+    }
+
+    #newPatternButton:active {
+      transform: translateY(1px);
+    }
+
+    .new-pattern-note {
+      font-size: 11px;
+      font-weight: 600;
+      color: #5a5a5a;
+      letter-spacing: 0.2px;
+      text-shadow: 0 1px 0 #ececec;
+      user-select: none;
     }
 
     .performance-row {
@@ -375,6 +415,10 @@
     <div id="menuBackdrop" class="menu-backdrop" aria-hidden="true"></div>
 
     <div id="generationControls" class="generation-controls">
+      <div class="new-pattern-wrap">
+        <button id="newPatternButton" type="button">NEW PATTERN</button>
+        <div class="new-pattern-note">Press "N" for new pattern</div>
+      </div>
       <div class="performance-row">
         <label for="pointsSlider">PERFORMANCE</label>
         <output id="pointsValue">300,000 pts</output>
@@ -411,6 +455,17 @@
     function alterParameters(a, b, c, d) {
       const factor = () => 0.9 + Math.random();
       return { a: a * factor(), b: b * factor(), c: c * factor(), d: d * factor() };
+    }
+
+    function randomizeParametersInRange(baseParams, minFactor, maxFactor) {
+      const next = {};
+      for (const key of Object.keys(baseParams)) {
+        const baseValue = baseParams[key];
+        const low = Math.min(baseValue * minFactor, baseValue * maxFactor);
+        const high = Math.max(baseValue * minFactor, baseValue * maxFactor);
+        next[key] = low + Math.random() * (high - low);
+      }
+      return next;
     }
 
     // Controls (use WebGL renderers when available)
@@ -872,18 +927,38 @@
     }
 
     (function setupGenerationControls() {
+      const newPatternButton = document.getElementById("newPatternButton");
       pointsSliderEl = document.getElementById("pointsSlider");
       pointsValueEl = document.getElementById("pointsValue");
       const modeToggle = document.getElementById("modeToggle");
       modeLabelEl = document.getElementById("modeLabel");
       fpsValueEl = document.getElementById("fpsValue");
-      if (!pointsSliderEl || !pointsValueEl || !modeToggle || !modeLabelEl || !fpsValueEl) return;
+      if (!newPatternButton || !pointsSliderEl || !pointsValueEl || !modeToggle || !modeLabelEl || !fpsValueEl) return;
 
       numberOfPoints = Number(pointsSliderEl.value) || defaultPoints;
       updatePointsLabel();
       updateModeLabel();
       updateFpsLabel();
       updatePlotScaleFromScroll();
+
+      function triggerNewPattern() {
+        params = generationMode === "animation"
+          ? randomizeParametersInRange(initParams, 0.9, 1.1)
+          : randomizeParametersInRange(initParams, 0.9, 1.9);
+        if (generationMode === "animation") pickAnimatedVariable();
+        restartGeneration();
+      }
+
+      newPatternButton.addEventListener("click", () => {
+        triggerNewPattern();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.defaultPrevented || e.repeat) return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (!e.key || e.key.toLowerCase() !== "n") return;
+        triggerNewPattern();
+      });
 
       pointsSliderEl.addEventListener("input", () => {
         const nextPoints = Number(pointsSliderEl.value);
