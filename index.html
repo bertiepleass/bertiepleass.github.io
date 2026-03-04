@@ -499,6 +499,8 @@
     const scatterGlMarkerSize = 0.7;
     const pointCloudMarkerSize = 3;
     const autoTuneIntervalMs = 350;
+    const cullStartScale = 1.35;
+    const cullOverscanFactor = 1.45;
     let animationFrameTrail = [];
 
     // Layout with disabled hover
@@ -516,6 +518,7 @@
     let animationTimeout;
     let currentIndex = 0;
     let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+    let renderData = data;
     let pointsSliderEl = null;
     let pointsValueEl = null;
     let modeLabelEl = null;
@@ -529,6 +532,10 @@
     let pointWorker = null;
     let pointWorkerURL = null;
     let pointWorkerJobId = 0;
+    let currentPlotScale = 1;
+    let currentDataBounds = null;
+    let lastScaleSyncAt = 0;
+    let lastScaleSyncedValue = 1;
     const pendingWorkerJobs = new Map();
 
     function formatPoints(value) {
@@ -545,14 +552,19 @@
           let x = 0, y = 0;
           const outX = new Float32Array(numberOfPoints);
           const outY = new Float32Array(numberOfPoints);
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
           for (let i = 0; i < numberOfPoints; i++) {
             const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
             const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
             outX[i] = nx;
             outY[i] = ny;
+            if (nx < minX) minX = nx;
+            if (nx > maxX) maxX = nx;
+            if (ny < minY) minY = ny;
+            if (ny > maxY) maxY = ny;
             x = nx; y = ny;
           }
-          self.postMessage({ jobId, x: outX, y: outY }, [outX.buffer, outY.buffer]);
+          self.postMessage({ jobId, x: outX, y: outY, minX, maxX, minY, maxY }, [outX.buffer, outY.buffer]);
         };
       `;
 
@@ -564,7 +576,16 @@
         const job = pendingWorkerJobs.get(msg.jobId);
         if (!job) return;
         pendingWorkerJobs.delete(msg.jobId);
-        job.resolve({ x: msg.x, y: msg.y });
+        job.resolve({
+          x: msg.x,
+          y: msg.y,
+          bounds: {
+            minX: msg.minX,
+            maxX: msg.maxX,
+            minY: msg.minY,
+            maxY: msg.maxY,
+          }
+        });
       };
 
       pointWorker.onerror = function (err) {
@@ -590,14 +611,127 @@
 
     function buildTrailTraces() {
       const traces = [];
+      const webglPointSize = getScaledPointSize(pointCloudMarkerSize, 0.45);
+      const cpuPointSize = getScaledPointSize(2, 0.45);
       for (let i = 0; i < animationFrameTrail.length; i++) {
         const frame = animationFrameTrail[i];
         const opacity = trailOpacities[Math.max(0, trailOpacities.length - animationFrameTrail.length + i)] || 0.8;
         traces.push(webglAvailable
-          ? { x: frame.x, y: frame.y, type: "pointcloud", showlegend: false, marker: { size: pointCloudMarkerSize, color: "black" }, opacity: opacity }
-          : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", showlegend: false, marker: { size: 2, color: "black" }, opacity: opacity });
+          ? { x: frame.x, y: frame.y, type: "pointcloud", showlegend: false, marker: { size: webglPointSize, color: "black" }, opacity: opacity }
+          : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", showlegend: false, marker: { size: cpuPointSize, color: "black" }, opacity: opacity });
       }
       return traces;
+    }
+
+    function getScaledPointSize(baseSize, minSize) {
+      const floor = Number.isFinite(minSize) ? minSize : 0.4;
+      return Math.max(floor, baseSize / Math.max(1, currentPlotScale));
+    }
+
+    function computeDataBounds(xArr, yArr) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      const len = Math.min(xArr.length, yArr.length);
+      for (let i = 0; i < len; i++) {
+        const x = xArr[i];
+        const y = yArr[i];
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+        return null;
+      }
+      return { minX, maxX, minY, maxY };
+    }
+
+    function cullPointsToVisibleWindow(xArr, yArr, bounds) {
+      if (!bounds || currentPlotScale < cullStartScale) return { x: xArr, y: yArr };
+      const fullWidth = Math.max(1e-9, bounds.maxX - bounds.minX);
+      const fullHeight = Math.max(1e-9, bounds.maxY - bounds.minY);
+      const centerX = (bounds.minX + bounds.maxX) * 0.5;
+      const centerY = (bounds.minY + bounds.maxY) * 0.5;
+      const halfVisibleWidth = Math.min(fullWidth * 0.5, (fullWidth / (2 * currentPlotScale)) * cullOverscanFactor);
+      const halfVisibleHeight = Math.min(fullHeight * 0.5, (fullHeight / (2 * currentPlotScale)) * cullOverscanFactor);
+      const minX = centerX - halfVisibleWidth;
+      const maxX = centerX + halfVisibleWidth;
+      const minY = centerY - halfVisibleHeight;
+      const maxY = centerY + halfVisibleHeight;
+      const padX = (maxX - minX) * 0.12;
+      const padY = (maxY - minY) * 0.12;
+      const clippedMinX = minX - padX;
+      const clippedMaxX = maxX + padX;
+      const clippedMinY = minY - padY;
+      const clippedMaxY = maxY + padY;
+
+      const len = Math.min(xArr.length, yArr.length);
+      let kept = 0;
+      for (let i = 0; i < len; i++) {
+        const x = xArr[i];
+        const y = yArr[i];
+        if (x >= clippedMinX && x <= clippedMaxX && y >= clippedMinY && y <= clippedMaxY) kept++;
+      }
+
+      if (kept === 0 || kept === len) return { x: xArr, y: yArr };
+
+      const outX = new Float32Array(kept);
+      const outY = new Float32Array(kept);
+      let cursor = 0;
+      for (let i = 0; i < len; i++) {
+        const x = xArr[i];
+        const y = yArr[i];
+        if (x >= clippedMinX && x <= clippedMaxX && y >= clippedMinY && y <= clippedMaxY) {
+          outX[cursor] = x;
+          outY[cursor] = y;
+          cursor++;
+        }
+      }
+      return { x: outX, y: outY };
+    }
+
+    function syncPlotToScale() {
+      if (typeof Plotly === "undefined") return;
+      const plotContainer = document.getElementById("attractor-plot");
+      if (!plotContainer || !plotContainer.data || !plotContainer.data.length) return;
+
+      const now = performance.now();
+      if ((now - lastScaleSyncAt) < 90) return;
+      if (Math.abs(currentPlotScale - lastScaleSyncedValue) < 0.02) return;
+      lastScaleSyncAt = now;
+      lastScaleSyncedValue = currentPlotScale;
+
+      if (generationMode === "static" && data && data.x && data.y && data.x.length > 0 && currentDataBounds) {
+        const previousVisibleLength = Math.max(1, renderData && renderData.x ? renderData.x.length : data.x.length);
+        const progress = Math.max(0, Math.min(1, currentIndex / previousVisibleLength));
+        renderData = cullPointsToVisibleWindow(data.x, data.y, currentDataBounds);
+        currentIndex = Math.max(0, Math.min(renderData.x.length, Math.round(progress * renderData.x.length)));
+        const visibleCount = currentIndex;
+        const staticTrace = webglAvailable
+          ? {
+              x: Array.from(renderData.x.slice(0, visibleCount)),
+              y: Array.from(renderData.y.slice(0, visibleCount)),
+              type: "pointcloud",
+              showlegend: false,
+              marker: { size: getScaledPointSize(pointCloudMarkerSize, 0.45), color: "black" }
+            }
+          : {
+              x: Array.from(renderData.x.slice(0, visibleCount)),
+              y: Array.from(renderData.y.slice(0, visibleCount)),
+              type: "scatter",
+              mode: "markers",
+              showlegend: false,
+              marker: { size: getScaledPointSize(2, 0.45), color: "black" }
+            };
+        Promise.resolve(Plotly.react("attractor-plot", [staticTrace], layout, plotConfig)).catch(() => {});
+        return;
+      }
+
+      const webglPointSize = getScaledPointSize(pointCloudMarkerSize, 0.45);
+      const cpuPointSize = getScaledPointSize(2, 0.45);
+      const pointSizes = plotContainer.data.map((trace) => (trace && trace.type === "scatter" ? cpuPointSize : webglPointSize));
+      try {
+        Plotly.restyle("attractor-plot", { "marker.size": pointSizes });
+      } catch (e) {}
     }
 
     function updatePointsLabel() {
@@ -761,7 +895,7 @@
             try {
               if (renderFullFrame) {
                 // Keep typed-array references from each generated frame; avoid expensive JS array copies.
-                animationFrameTrail.push({ x: data.x, y: data.y });
+                animationFrameTrail.push({ x: renderData.x, y: renderData.y });
                 if (animationFrameTrail.length > trailFrameCount) animationFrameTrail.shift();
 
                 const trailTraces = buildTrailTraces();
@@ -782,8 +916,8 @@
               }
 
               var trace = webglAvailable
-                ? { x: [], y: [], type: "pointcloud", showlegend: false, marker: { size: pointCloudMarkerSize, color: "black" } }
-                : { x: [], y: [], type: "scatter", mode: "markers", showlegend: false, marker: { size: 2, color: "black" } };
+                ? { x: [], y: [], type: "pointcloud", showlegend: false, marker: { size: getScaledPointSize(pointCloudMarkerSize, 0.45), color: "black" } }
+                : { x: [], y: [], type: "scatter", mode: "markers", showlegend: false, marker: { size: getScaledPointSize(2, 0.45), color: "black" } };
               Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
                 if (thisRunId !== runId) return;
                 currentIndex = 0;
@@ -800,12 +934,15 @@
           requestPointsFromWorker(params, numberOfPoints)
             .then((out) => {
               if (thisRunId !== runId) return;
-              data = out;
+              data = { x: out.x, y: out.y };
+              currentDataBounds = out.bounds || computeDataBounds(data.x, data.y);
+              renderData = cullPointsToVisibleWindow(data.x, data.y, currentDataBounds);
               initPlot();
             })
             .catch(() => {
               if (thisRunId !== runId) return;
               generatePoints(params);
+              renderData = cullPointsToVisibleWindow(data.x, data.y, currentDataBounds);
               initPlot();
             });
         });
@@ -815,13 +952,19 @@
     function generatePoints(params) {
       data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
       let x = 0, y = 0;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (let i = 0; i < numberOfPoints; i++) {
         const p = cliffordAttractor(params.a, params.b, params.c, params.d, x, y);
         data.x[i] = p.x;
         data.y[i] = p.y;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
         x = p.x;
         y = p.y;
       }
+      currentDataBounds = { minX, maxX, minY, maxY };
     }
 
     function animatePlot(animationRunId) {
@@ -829,7 +972,7 @@
       if (isPaused) return;
       if (typeof Plotly === "undefined") return;
 
-      const totalPoints = Math.min(staticMaxPointsPerImage, data.x.length);
+      const totalPoints = Math.min(staticMaxPointsPerImage, renderData.x.length);
       if (currentIndex < totalPoints) {
         const progressRatio = currentIndex / Math.max(1, totalPoints);
         const baseBatchSize = Math.floor(minBatchSize + progressRatio * (maxBatchSize - minBatchSize));
@@ -837,8 +980,8 @@
         const pointsToAdd = Math.min(pointsRemaining, baseBatchSize);
 
         const update = {
-          x: [Array.from(data.x.slice(currentIndex, currentIndex + pointsToAdd))],
-          y: [Array.from(data.y.slice(currentIndex, currentIndex + pointsToAdd))],
+          x: [Array.from(renderData.x.slice(currentIndex, currentIndex + pointsToAdd))],
+          y: [Array.from(renderData.y.slice(currentIndex, currentIndex + pointsToAdd))],
         };
 
         try {
@@ -865,8 +1008,10 @@
       if (!plotShell) return;
       const maxScroll = Math.max(window.innerHeight, document.documentElement.scrollHeight - window.innerHeight);
       const progress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
-      const scale = 1 + progress * 4; // 1x to 5x
+      const scale = 1 + progress * 2; // 1x to 3x
+      currentPlotScale = scale;
       plotShell.style.setProperty("--plot-scale", scale.toFixed(4));
+      syncPlotToScale();
     }
 
     let scrollTicking = false;
