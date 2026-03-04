@@ -40,6 +40,36 @@
       pointer-events: none !important;
     }
 
+    #scroll-content {
+      position: relative;
+      z-index: 2;
+      pointer-events: auto;
+    }
+
+    .scroll-spacer {
+      min-height: 200vh;
+    }
+
+    .example-section {
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0 24px 52px;
+      box-sizing: border-box;
+    }
+
+    .example-image {
+      width: min(1180px, 50vw);
+      height: auto;
+      display: block;
+      border-radius: 8px;
+      box-shadow: 0 16px 46px rgba(0, 0, 0, 0.14);
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(1.5px);
+      -webkit-backdrop-filter: blur(1.5px);
+    }
+
     /* --- Landing page overlay UI --- */
     #site-ui {
       position: fixed;
@@ -162,33 +192,40 @@
       right: 14px;
       bottom: 14px;
       z-index: 3;
-      width: min(360px, calc(100vw - 28px));
+      width: min(300px, calc(100vw - 28px));
       background: transparent;
       border: 0;
       box-shadow: none;
       padding: 0;
+      opacity: 0.72;
+      transition: opacity 160ms ease;
+    }
+
+    .generation-controls:hover,
+    .generation-controls:focus-within {
+      opacity: 0.9;
     }
 
     .new-pattern-wrap {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 4px;
-      margin-bottom: 8px;
+      gap: 3px;
+      margin-bottom: 6px;
     }
 
     #newPatternButton {
       appearance: none;
-      border: 1px solid #a8a8a8;
+      border: 1px solid #c2c2c2;
       border-radius: 999px;
-      background: linear-gradient(180deg, #f9f9f9 0%, #d9d9d9 100%);
-      color: #505050;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.7px;
+      background: linear-gradient(180deg, #fbfbfb 0%, #e7e7e7 100%);
+      color: #727272;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
       line-height: 1;
-      padding: 7px 11px;
-      box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(0, 0, 0, 0.25);
+      padding: 5px 9px;
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(0, 0, 0, 0.14);
       cursor: pointer;
     }
 
@@ -201,11 +238,11 @@
     }
 
     .new-pattern-note {
-      font-size: 11px;
-      font-weight: 600;
-      color: #5a5a5a;
+      font-size: 10px;
+      font-weight: 500;
+      color: #8f8f8f;
       letter-spacing: 0.2px;
-      text-shadow: 0 1px 0 #ececec;
+      text-shadow: none;
       user-select: none;
     }
 
@@ -214,59 +251,59 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      font-size: 12px;
-      letter-spacing: 0.7px;
-      font-weight: 700;
-      color: #4f4f4f;
-      margin-bottom: 8px;
-      text-shadow: 0 1px 0 #ececec;
+      font-size: 10.5px;
+      letter-spacing: 0.45px;
+      font-weight: 600;
+      color: #8a8a8a;
+      margin-bottom: 6px;
+      text-shadow: none;
     }
 
     .performance-row output {
-      font-size: 12px;
+      font-size: 10.5px;
       letter-spacing: 0;
-      font-weight: 600;
-      color: #5d5d5d;
+      font-weight: 500;
+      color: #919191;
     }
 
     .performance-meta {
       margin-top: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #595959;
+      font-size: 10px;
+      font-weight: 500;
+      color: #999999;
       letter-spacing: 0.2px;
-      text-shadow: 0 1px 0 #ececec;
+      text-shadow: none;
     }
 
     #pointsSlider {
       width: 100%;
-      height: 12px;
+      height: 9px;
       appearance: none;
       border-radius: 999px;
-      background: linear-gradient(180deg, #7f7f7f 0%, #696969 100%);
-      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+      background: linear-gradient(180deg, #a2a2a2 0%, #8f8f8f 100%);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.22);
       outline: none;
-      margin: 2px 0 12px;
+      margin: 2px 0 10px;
     }
 
     #pointsSlider::-webkit-slider-thumb {
       appearance: none;
-      width: 24px;
-      height: 24px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
-      border: 1px solid #a9a9a9;
-      background: linear-gradient(180deg, #f8f8f8 0%, #d9d9d9 100%);
-      box-shadow: inset 0 1px 0 #ffffff, 0 1px 6px rgba(0, 0, 0, 0.35);
+      border: 1px solid #b8b8b8;
+      background: linear-gradient(180deg, #fbfbfb 0%, #e2e2e2 100%);
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(0, 0, 0, 0.2);
       cursor: pointer;
     }
 
     #pointsSlider::-moz-range-thumb {
-      width: 24px;
-      height: 24px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
-      border: 1px solid #a9a9a9;
-      background: linear-gradient(180deg, #f8f8f8 0%, #d9d9d9 100%);
-      box-shadow: inset 0 1px 0 #ffffff, 0 1px 6px rgba(0, 0, 0, 0.35);
+      border: 1px solid #b8b8b8;
+      background: linear-gradient(180deg, #fbfbfb 0%, #e2e2e2 100%);
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(0, 0, 0, 0.2);
       cursor: pointer;
     }
 
@@ -274,28 +311,28 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.7px;
-      color: #4f4f4f;
+      gap: 10px;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.45px;
+      color: #8a8a8a;
     }
 
     .toggle-caption {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 12px;
-      color: #4f4f4f;
-      letter-spacing: 0.6px;
-      font-weight: 700;
-      text-shadow: 0 1px 0 #ececec;
+      font-size: 10.5px;
+      color: #8a8a8a;
+      letter-spacing: 0.45px;
+      font-weight: 600;
+      text-shadow: none;
     }
 
     .toggle-mode {
-      font-size: 11px;
-      color: #5d5d5d;
-      font-weight: 600;
+      font-size: 10px;
+      color: #9a9a9a;
+      font-weight: 500;
       letter-spacing: 0;
     }
 
@@ -315,34 +352,34 @@
 
     .switch-track {
       position: relative;
-      width: 48px;
-      height: 28px;
+      width: 40px;
+      height: 22px;
       border-radius: 999px;
-      background: linear-gradient(180deg, #c3c3c3 0%, #afafaf 100%);
-      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.45);
+      background: linear-gradient(180deg, #d2d2d2 0%, #bebebe 100%);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 -1px 0 rgba(255, 255, 255, 0.5);
       transition: background 180ms ease;
       display: inline-block;
     }
 
     .switch-thumb {
       position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 22px;
-      height: 22px;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
-      background: linear-gradient(180deg, #fdfdfd 0%, #d7d7d7 100%);
-      border: 1px solid #aaaaaa;
-      box-shadow: inset 0 1px 0 #ffffff, 0 2px 5px rgba(0, 0, 0, 0.3);
+      background: linear-gradient(180deg, #fefefe 0%, #e5e5e5 100%);
+      border: 1px solid #bbbbbb;
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 3px rgba(0, 0, 0, 0.18);
       transition: transform 180ms ease;
     }
 
     .switch input:checked + .switch-track {
-      background: linear-gradient(180deg, #7c7c7c 0%, #696969 100%);
+      background: linear-gradient(180deg, #a9a9a9 0%, #989898 100%);
     }
 
     .switch input:checked + .switch-track .switch-thumb {
-      transform: translateX(20px);
+      transform: translateX(16px);
     }
 
     /* Open state */
@@ -373,6 +410,16 @@
         bottom: 10px;
         width: calc(100vw - 20px);
       }
+      .scroll-spacer {
+        min-height: 125vh;
+      }
+      .example-section {
+        min-height: 92vh;
+        padding: 0 10px 16px;
+      }
+      .example-image {
+        width: 96vw;
+      }
       #plot-shell {
         width: min(92vw, 420px);
         height: 62vh;
@@ -385,6 +432,13 @@
   <div id="plot-shell">
     <div id="attractor-plot"></div>
   </div>
+
+  <main id="scroll-content">
+    <section class="scroll-spacer" aria-hidden="true"></section>
+    <section class="example-section">
+      <img src="lyapunovexample.png" alt="Lyapunov example image" class="example-image" loading="lazy" />
+    </section>
+  </main>
 
   <!-- Overlay UI -->
   <div id="site-ui">
@@ -427,7 +481,7 @@
       <div class="performance-meta" id="fpsValue">BUILD: -- / target 5.00s</div>
       <div class="toggle-row">
         <div class="toggle-caption">
-          <span>GENERATION MODE</span>
+          <span>IMAGE TYPE</span>
           <span id="modeLabel" class="toggle-mode">STATIC</span>
         </div>
         <label class="switch">
