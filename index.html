@@ -380,7 +380,7 @@
         <output id="pointsValue">300,000 pts</output>
       </div>
       <input id="pointsSlider" type="range" min="10000" max="1000000" step="10000" value="300000" />
-      <div class="performance-meta" id="fpsValue">FPS: -- / target 5</div>
+      <div class="performance-meta" id="fpsValue">FPS: -- / target 10</div>
       <div class="toggle-row">
         <div class="toggle-caption">
           <span>GENERATION MODE</span>
@@ -429,7 +429,7 @@
     let maxBatchSize = 5000;
     let timeoutInterval = 10;
     const animationFrameInterval = 33;
-    const targetAnimationFps = 5;
+    const targetAnimationFps = 10;
     let generationMode = "static"; // "static" | "animation"
     const animatedParamKeys = ["a", "b", "c", "d"];
     let animatedParamIndex = Math.floor(Math.random() * animatedParamKeys.length);
@@ -437,6 +437,9 @@
     const animatedStep = 0.002;
     let runId = 0;
     let activeDrawId = 0;
+    const trailFrameCount = 4;
+    const trailOpacities = [0.14, 0.28, 0.48, 0.8];
+    let animationFrameTrail = [];
 
     // Layout with disabled hover
     let layout = {
@@ -462,6 +465,18 @@
 
     function formatPoints(value) {
       return Number(value).toLocaleString("en-US");
+    }
+
+    function buildTrailTraces() {
+      const traces = [];
+      for (let i = 0; i < animationFrameTrail.length; i++) {
+        const frame = animationFrameTrail[i];
+        const opacity = trailOpacities[Math.max(0, trailOpacities.length - animationFrameTrail.length + i)] || 0.8;
+        traces.push(webglAvailable
+          ? { x: frame.x, y: frame.y, type: "pointcloud", marker: { size: 3, color: "black" }, opacity: opacity }
+          : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", marker: { size: 2, color: "black" }, opacity: opacity });
+      }
+      return traces;
     }
 
     function updatePointsLabel() {
@@ -539,6 +554,7 @@
     function restartGeneration() {
       clearTimeout(animationTimeout);
       activeDrawId = -1;
+      animationFrameTrail = [];
       startAnimation(params);
     }
 
@@ -561,40 +577,41 @@
           if (thisRunId !== runId) return;
           const plotContainer = document.getElementById("attractor-plot");
           if (!plotContainer) return;
-          plotContainer.innerHTML = "";
+          const renderFullFrame = generationMode === "animation";
+          if (!renderFullFrame) plotContainer.innerHTML = "";
 
           function initPlot() {
             if (thisRunId !== runId) return;
             try {
-              var renderFullFrame = generationMode === "animation";
-              var trace = webglAvailable
-                ? {
-                  x: renderFullFrame ? Array.from(data.x) : [],
-                  y: renderFullFrame ? Array.from(data.y) : [],
-                  type: "pointcloud",
-                  marker: { size: 3, color: "black" }
-                }
-                : {
-                  x: renderFullFrame ? Array.from(data.x) : [],
-                  y: renderFullFrame ? Array.from(data.y) : [],
-                  type: "scatter",
-                  mode: "markers",
-                  marker: { size: 2, color: "black" }
-                };
-              Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
-                if (thisRunId !== runId) return;
-                currentIndex = 0;
-                if (renderFullFrame) {
+              if (renderFullFrame) {
+                animationFrameTrail.push({ x: Array.from(data.x), y: Array.from(data.y) });
+                if (animationFrameTrail.length > trailFrameCount) animationFrameTrail.shift();
+
+                const trailTraces = buildTrailTraces();
+                const renderPromise = plotContainer.data
+                  ? Plotly.react("attractor-plot", trailTraces, layout, plotConfig)
+                  : Plotly.newPlot("attractor-plot", trailTraces, layout, plotConfig);
+
+                Promise.resolve(renderPromise).then(() => {
+                  if (thisRunId !== runId) return;
                   monitorAnimationAndAutoTune();
                   animationTimeout = setTimeout(() => {
                     if (thisRunId !== runId) return;
                     stepAnimatedParameters();
                     startAnimation(params);
                   }, animationFrameInterval);
-                } else {
-                  activeDrawId = thisRunId;
-                  animatePlot(thisRunId);
-                }
+                });
+                return;
+              }
+
+              var trace = webglAvailable
+                ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
+                : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
+              Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
+                if (thisRunId !== runId) return;
+                currentIndex = 0;
+                activeDrawId = thisRunId;
+                animatePlot(thisRunId);
               });
             } catch (err) {
               showPlotError("Something went wrong. Try refreshing the page.");
@@ -693,7 +710,7 @@
       if (!plotShell) return;
       const maxScroll = Math.max(window.innerHeight, document.documentElement.scrollHeight - window.innerHeight);
       const progress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
-      const scale = 1 + progress * 2; // 1x to 3x
+      const scale = 1 + progress * 4; // 1x to 5x
       plotShell.style.setProperty("--plot-scale", scale.toFixed(4));
     }
 
@@ -770,6 +787,7 @@
       modeToggle.addEventListener("change", () => {
         generationMode = modeToggle.checked ? "animation" : "static";
         resetAnimationMonitoring();
+        animationFrameTrail = [];
         if (generationMode === "animation") pickAnimatedVariable();
         updateModeLabel();
         restartGeneration();
