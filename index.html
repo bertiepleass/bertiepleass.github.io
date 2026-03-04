@@ -380,7 +380,7 @@
         <output id="pointsValue">300,000 pts</output>
       </div>
       <input id="pointsSlider" type="range" min="10000" max="1000000" step="10000" value="300000" />
-      <div class="performance-meta" id="fpsValue">FPS: -- / target 10</div>
+      <div class="performance-meta" id="fpsValue">BUILD: -- / target 5.00s</div>
       <div class="toggle-row">
         <div class="toggle-caption">
           <span>GENERATION MODE</span>
@@ -413,7 +413,7 @@
       return { a: a * factor(), b: b * factor(), c: c * factor(), d: d * factor() };
     }
 
-    // Controls (use WebGL scatter markers when available)
+    // Controls (use WebGL renderers when available)
     function isWebGLAvailable() {
       try {
         var canvas = document.createElement("canvas");
@@ -430,15 +430,20 @@
     let timeoutInterval = 10;
     const animationFrameInterval = 33;
     const targetAnimationFps = 10;
+    const staticTargetBuildDurationMs = 5000;
+    const staticMaxPointsPerImage = 1000000;
     let generationMode = "static"; // "static" | "animation"
     const animatedParamKeys = ["a", "b", "c", "d"];
     let animatedParamIndex = Math.floor(Math.random() * animatedParamKeys.length);
     let animatedDirection = Math.random() < 0.5 ? 1 : -1;
-    const animatedStep = 0.002;
+    const animatedStep = 0.0008;
     let runId = 0;
     let activeDrawId = 0;
     const trailFrameCount = 4;
-    const trailOpacities = [0.14, 0.28, 0.48, 0.8];
+    const trailOpacities = [0.12, 0.24, 0.45, 0.8];
+    const scatterGlMarkerSize = 0.7;
+    const pointCloudMarkerSize = 3;
+    const autoTuneIntervalMs = 350;
     let animationFrameTrail = [];
 
     // Layout with disabled hover
@@ -447,6 +452,7 @@
       yaxis: { showgrid: false, zeroline: false, showline: false, showticklabels: false, ticks: "" },
       margin: { l: 10, r: 10, b: 10, t: 10 },
       hovermode: false,
+      showlegend: false,
       autosize: true,
     };
     const plotConfig = { displayModeBar: false, scrollZoom: false };
@@ -462,9 +468,69 @@
     let lastAnimationFrameTimestamp = 0;
     let smoothedAnimationFps = 0;
     let lastAutoTuneTimestamp = 0;
+    let staticBuildStartedAt = 0;
+    let lastStaticBuildDurationMs = 0;
+    let staticPreferredPoints = numberOfPoints;
+    let pointWorker = null;
+    let pointWorkerURL = null;
+    let pointWorkerJobId = 0;
+    const pendingWorkerJobs = new Map();
 
     function formatPoints(value) {
       return Number(value).toLocaleString("en-US");
+    }
+
+    function ensurePointWorker() {
+      if (!window.Worker) return null;
+      if (pointWorker) return pointWorker;
+
+      const workerCode = `
+        self.onmessage = function(e) {
+          const { jobId, params, numberOfPoints } = e.data;
+          let x = 0, y = 0;
+          const outX = new Float32Array(numberOfPoints);
+          const outY = new Float32Array(numberOfPoints);
+          for (let i = 0; i < numberOfPoints; i++) {
+            const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
+            const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
+            outX[i] = nx;
+            outY[i] = ny;
+            x = nx; y = ny;
+          }
+          self.postMessage({ jobId, x: outX, y: outY }, [outX.buffer, outY.buffer]);
+        };
+      `;
+
+      pointWorkerURL = URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" }));
+      pointWorker = new Worker(pointWorkerURL);
+
+      pointWorker.onmessage = function (e) {
+        const msg = e.data || {};
+        const job = pendingWorkerJobs.get(msg.jobId);
+        if (!job) return;
+        pendingWorkerJobs.delete(msg.jobId);
+        job.resolve({ x: msg.x, y: msg.y });
+      };
+
+      pointWorker.onerror = function (err) {
+        for (const [, job] of pendingWorkerJobs) job.reject(err);
+        pendingWorkerJobs.clear();
+      };
+
+      return pointWorker;
+    }
+
+    function requestPointsFromWorker(params, pointCount) {
+      return new Promise((resolve, reject) => {
+        const worker = ensurePointWorker();
+        if (!worker) {
+          reject(new Error("Worker unavailable"));
+          return;
+        }
+        const jobId = ++pointWorkerJobId;
+        pendingWorkerJobs.set(jobId, { resolve, reject });
+        worker.postMessage({ jobId, params, numberOfPoints: pointCount });
+      });
     }
 
     function buildTrailTraces() {
@@ -473,8 +539,8 @@
         const frame = animationFrameTrail[i];
         const opacity = trailOpacities[Math.max(0, trailOpacities.length - animationFrameTrail.length + i)] || 0.8;
         traces.push(webglAvailable
-          ? { x: frame.x, y: frame.y, type: "scattergl", mode: "markers", marker: { size: 1.4, color: "black" }, opacity: opacity }
-          : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", marker: { size: 2, color: "black" }, opacity: opacity });
+          ? { x: frame.x, y: frame.y, type: "pointcloud", showlegend: false, marker: { size: pointCloudMarkerSize, color: "black" }, opacity: opacity }
+          : { x: frame.x, y: frame.y, type: "scatter", mode: "markers", showlegend: false, marker: { size: 2, color: "black" }, opacity: opacity });
       }
       return traces;
     }
@@ -491,22 +557,57 @@
 
     function updateFpsLabel() {
       if (!fpsValueEl) return;
-      if (generationMode !== "animation" || !Number.isFinite(smoothedAnimationFps) || smoothedAnimationFps <= 0) {
+      if (generationMode === "static") {
+        if (!Number.isFinite(lastStaticBuildDurationMs) || lastStaticBuildDurationMs <= 0) {
+          fpsValueEl.textContent = "BUILD: -- / target " + (staticTargetBuildDurationMs / 1000).toFixed(2) + "s";
+          return;
+        }
+        fpsValueEl.textContent = "BUILD: " + (lastStaticBuildDurationMs / 1000).toFixed(2) + "s / target " + (staticTargetBuildDurationMs / 1000).toFixed(2) + "s";
+        return;
+      }
+      if (!Number.isFinite(smoothedAnimationFps) || smoothedAnimationFps <= 0) {
         fpsValueEl.textContent = "FPS: -- / target " + targetAnimationFps;
         return;
       }
       fpsValueEl.textContent = "FPS: " + smoothedAnimationFps.toFixed(1) + " / target " + targetAnimationFps;
     }
 
-    function resetAnimationMonitoring() {
+    function tuneStaticPoints(buildDurationMs) {
+      if (generationMode !== "static") return;
+      if (!Number.isFinite(buildDurationMs) || buildDurationMs <= 0) return;
+
+      const target = staticTargetBuildDurationMs;
+      const lowerBound = target * 0.92;
+      const upperBound = target * 1.08;
+      const currentPoints = numberOfPoints;
+      let nextPoints = currentPoints;
+
+      if (buildDurationMs < lowerBound) {
+        // Scale up quickly when well under target, while avoiding abrupt oscillation.
+        const scaleUp = Math.min(2.2, Math.max(1.08, target / buildDurationMs));
+        nextPoints = Math.round((currentPoints * scaleUp) / 10000) * 10000;
+      } else if (buildDurationMs > upperBound) {
+        const scaleDown = Math.max(0.45, Math.min(0.98, target / buildDurationMs));
+        nextPoints = Math.round((currentPoints * scaleDown) / 10000) * 10000;
+      }
+
+      nextPoints = Math.max(minPoints, Math.min(staticMaxPointsPerImage, nextPoints));
+      if (nextPoints !== currentPoints) {
+        numberOfPoints = nextPoints;
+        staticPreferredPoints = nextPoints;
+        if (pointsSliderEl) pointsSliderEl.value = String(nextPoints);
+        updatePointsLabel();
+      }
+    }
+
+    function resetFrameMonitoring() {
       lastAnimationFrameTimestamp = 0;
       smoothedAnimationFps = 0;
       lastAutoTuneTimestamp = 0;
       updateFpsLabel();
     }
 
-    function monitorAnimationAndAutoTune() {
-      if (generationMode !== "animation") return;
+    function monitorFrameRateAndAutoTune() {
       const now = performance.now();
       if (lastAnimationFrameTimestamp > 0) {
         const frameMs = Math.max(1, now - lastAnimationFrameTimestamp);
@@ -518,15 +619,32 @@
       lastAnimationFrameTimestamp = now;
       updateFpsLabel();
 
-      if (smoothedAnimationFps > 0 && smoothedAnimationFps < targetAnimationFps && numberOfPoints > minPoints) {
-        if ((now - lastAutoTuneTimestamp) >= 900) {
-          lastAutoTuneTimestamp = now;
-          const scaledStep = Math.round((numberOfPoints * 0.08) / 10000) * 10000;
-          const decrement = Math.max(10000, scaledStep);
-          numberOfPoints = Math.max(minPoints, numberOfPoints - decrement);
-          if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
-          updatePointsLabel();
-        }
+      if (generationMode !== "animation" || smoothedAnimationFps <= 0) return;
+      if ((now - lastAutoTuneTimestamp) < autoTuneIntervalMs) return;
+      lastAutoTuneTimestamp = now;
+
+      const lowerFpsBound = targetAnimationFps * 0.95;
+      const upperFpsBound = targetAnimationFps * 1.08;
+
+      if (smoothedAnimationFps < lowerFpsBound && numberOfPoints > minPoints) {
+        const severeDrop = smoothedAnimationFps < (targetAnimationFps * 0.6);
+        const ratio = severeDrop ? 0.3 : 0.16;
+        const scaledStep = Math.round((numberOfPoints * ratio) / 10000) * 10000;
+        const decrement = Math.max(severeDrop ? 20000 : 10000, scaledStep);
+        numberOfPoints = Math.max(minPoints, numberOfPoints - decrement);
+        if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
+        updatePointsLabel();
+        return;
+      }
+
+      if (smoothedAnimationFps > upperFpsBound && numberOfPoints < maxPoints) {
+        const strongHeadroom = smoothedAnimationFps > (targetAnimationFps * 1.4);
+        const ratio = strongHeadroom ? 0.12 : 0.07;
+        const scaledStep = Math.round((numberOfPoints * ratio) / 10000) * 10000;
+        const increment = Math.max(10000, scaledStep);
+        numberOfPoints = Math.min(maxPoints, numberOfPoints + increment);
+        if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
+        updatePointsLabel();
       }
     }
 
@@ -555,6 +673,9 @@
       clearTimeout(animationTimeout);
       activeDrawId = -1;
       animationFrameTrail = [];
+      staticBuildStartedAt = 0;
+      lastStaticBuildDurationMs = 0;
+      updateFpsLabel();
       startAnimation(params);
     }
 
@@ -584,7 +705,8 @@
             if (thisRunId !== runId) return;
             try {
               if (renderFullFrame) {
-                animationFrameTrail.push({ x: Array.from(data.x), y: Array.from(data.y) });
+                // Keep typed-array references from each generated frame; avoid expensive JS array copies.
+                animationFrameTrail.push({ x: data.x, y: data.y });
                 if (animationFrameTrail.length > trailFrameCount) animationFrameTrail.shift();
 
                 const trailTraces = buildTrailTraces();
@@ -594,7 +716,7 @@
 
                 Promise.resolve(renderPromise).then(() => {
                   if (thisRunId !== runId) return;
-                  monitorAnimationAndAutoTune();
+                  monitorFrameRateAndAutoTune();
                   animationTimeout = setTimeout(() => {
                     if (thisRunId !== runId) return;
                     stepAnimatedParameters();
@@ -605,11 +727,12 @@
               }
 
               var trace = webglAvailable
-                ? { x: [], y: [], type: "scattergl", mode: "markers", marker: { size: 1.4, color: "black" } }
-                : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
+                ? { x: [], y: [], type: "pointcloud", showlegend: false, marker: { size: pointCloudMarkerSize, color: "black" } }
+                : { x: [], y: [], type: "scatter", mode: "markers", showlegend: false, marker: { size: 2, color: "black" } };
               Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
                 if (thisRunId !== runId) return;
                 currentIndex = 0;
+                staticBuildStartedAt = performance.now();
                 activeDrawId = thisRunId;
                 animatePlot(thisRunId);
               });
@@ -619,45 +742,17 @@
             }
           }
 
-          if (window.Worker) {
-            try {
-              const workerCode = `
-                self.onmessage = function(e) {
-                  const { params, numberOfPoints } = e.data;
-                  let x = 0, y = 0;
-                  let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
-                  for (let i = 0; i < numberOfPoints; i++) {
-                    const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
-                    const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
-                    out.x[i] = nx;
-                    out.y[i] = ny;
-                    x = nx; y = ny;
-                  }
-                  self.postMessage(out);
-                }
-              `;
-              const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
-              worker.onerror = function () {
-                worker.terminate();
-                if (thisRunId !== runId) return;
-                generatePoints(params);
-                initPlot();
-              };
-              worker.onmessage = function (e) {
-                worker.terminate();
-                if (thisRunId !== runId) return;
-                data = e.data;
-                initPlot();
-              };
-              worker.postMessage({ params, numberOfPoints });
-            } catch (err) {
+          requestPointsFromWorker(params, numberOfPoints)
+            .then((out) => {
+              if (thisRunId !== runId) return;
+              data = out;
+              initPlot();
+            })
+            .catch(() => {
+              if (thisRunId !== runId) return;
               generatePoints(params);
               initPlot();
-            }
-          } else {
-            generatePoints(params);
-            initPlot();
-          }
+            });
         });
       });
     }
@@ -679,11 +774,12 @@
       if (isPaused) return;
       if (typeof Plotly === "undefined") return;
 
-      var totalPoints = data.x.length;
+      const totalPoints = Math.min(staticMaxPointsPerImage, data.x.length);
       if (currentIndex < totalPoints) {
-        const progressRatio = currentIndex / totalPoints;
-        const batchSize = Math.floor(minBatchSize + progressRatio * (maxBatchSize - minBatchSize));
-        const pointsToAdd = Math.min(batchSize, totalPoints - currentIndex);
+        const progressRatio = currentIndex / Math.max(1, totalPoints);
+        const baseBatchSize = Math.floor(minBatchSize + progressRatio * (maxBatchSize - minBatchSize));
+        const pointsRemaining = totalPoints - currentIndex;
+        const pointsToAdd = Math.min(pointsRemaining, baseBatchSize);
 
         const update = {
           x: [Array.from(data.x.slice(currentIndex, currentIndex + pointsToAdd))],
@@ -697,9 +793,13 @@
           return;
         }
         currentIndex += pointsToAdd;
+        monitorFrameRateAndAutoTune();
 
         animationTimeout = setTimeout(() => animatePlot(animationRunId), timeoutInterval);
       } else {
+        lastStaticBuildDurationMs = staticBuildStartedAt > 0 ? (performance.now() - staticBuildStartedAt) : 0;
+        tuneStaticPoints(lastStaticBuildDurationMs);
+        updateFpsLabel();
         params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
         startAnimation(params);
       }
@@ -730,6 +830,18 @@
         try { Plotly.Plots.resize("attractor-plot"); } catch (e) {}
       }
       updatePlotScaleFromScroll();
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (pointWorker) {
+        pointWorker.terminate();
+        pointWorker = null;
+      }
+      if (pointWorkerURL) {
+        URL.revokeObjectURL(pointWorkerURL);
+        pointWorkerURL = null;
+      }
+      pendingWorkerJobs.clear();
     });
 
     // Start only when Plotly is ready (avoids race where script runs before CDN finishes)
@@ -777,6 +889,7 @@
         const nextPoints = Number(pointsSliderEl.value);
         if (!Number.isFinite(nextPoints)) return;
         numberOfPoints = Math.max(minPoints, Math.min(maxPoints, Math.floor(nextPoints)));
+        if (generationMode === "static") staticPreferredPoints = numberOfPoints;
         updatePointsLabel();
       });
 
@@ -785,10 +898,23 @@
       });
 
       modeToggle.addEventListener("change", () => {
-        generationMode = modeToggle.checked ? "animation" : "static";
-        resetAnimationMonitoring();
+        const switchingToAnimation = modeToggle.checked;
+        generationMode = switchingToAnimation ? "animation" : "static";
+        resetFrameMonitoring();
         animationFrameTrail = [];
-        if (generationMode === "animation") pickAnimatedVariable();
+        if (generationMode === "animation") {
+          staticPreferredPoints = Math.max(minPoints, Math.min(staticMaxPointsPerImage, numberOfPoints));
+          if (numberOfPoints > 180000) {
+            numberOfPoints = 180000;
+            if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
+            updatePointsLabel();
+          }
+          pickAnimatedVariable();
+        } else {
+          numberOfPoints = Math.max(minPoints, Math.min(staticMaxPointsPerImage, staticPreferredPoints));
+          if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
+          updatePointsLabel();
+        }
         updateModeLabel();
         restartGeneration();
       });
