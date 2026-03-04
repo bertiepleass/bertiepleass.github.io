@@ -10,15 +10,29 @@
   <style>
     body {
       margin: 0;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 180vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+      background: #f4f4f4;
+    }
+
+    #plot-shell {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 33.333vw;
+      height: 66.666vh;
+      transform: translate(-50%, -50%) scale(var(--plot-scale, 1));
+      transform-origin: center center;
+      transition: transform 140ms ease-out;
+      will-change: transform;
+      pointer-events: none;
+      z-index: 0;
     }
 
     #attractor-plot {
-      position: fixed;
-      inset: 0;
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
     }
 
     /* --- Landing page overlay UI --- */
@@ -137,6 +151,147 @@
       line-height: 1.35;
     }
 
+    .generation-controls {
+      pointer-events: auto;
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      z-index: 3;
+      width: min(360px, calc(100vw - 28px));
+      border-radius: 16px;
+      background: linear-gradient(180deg, #d8d8d8 0%, #c9c9c9 100%);
+      border: 1px solid #bdbdbd;
+      box-shadow: inset 0 1px 0 #efefef, inset 0 -1px 0 #b2b2b2, 0 14px 30px rgba(0, 0, 0, 0.2);
+      padding: 12px 14px;
+    }
+
+    .performance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      letter-spacing: 0.7px;
+      font-weight: 700;
+      color: #4f4f4f;
+      margin-bottom: 8px;
+      text-shadow: 0 1px 0 #ececec;
+    }
+
+    .performance-row output {
+      font-size: 12px;
+      letter-spacing: 0;
+      font-weight: 600;
+      color: #5d5d5d;
+    }
+
+    #pointsSlider {
+      width: 100%;
+      height: 12px;
+      appearance: none;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #7f7f7f 0%, #696969 100%);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+      outline: none;
+      margin: 2px 0 12px;
+    }
+
+    #pointsSlider::-webkit-slider-thumb {
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid #a9a9a9;
+      background: linear-gradient(180deg, #f8f8f8 0%, #d9d9d9 100%);
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 6px rgba(0, 0, 0, 0.35);
+      cursor: pointer;
+    }
+
+    #pointsSlider::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid #a9a9a9;
+      background: linear-gradient(180deg, #f8f8f8 0%, #d9d9d9 100%);
+      box-shadow: inset 0 1px 0 #ffffff, 0 1px 6px rgba(0, 0, 0, 0.35);
+      cursor: pointer;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+      color: #4f4f4f;
+    }
+
+    .toggle-caption {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #4f4f4f;
+      letter-spacing: 0.6px;
+      font-weight: 700;
+      text-shadow: 0 1px 0 #ececec;
+    }
+
+    .toggle-mode {
+      font-size: 11px;
+      color: #5d5d5d;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #c3c3c3 0%, #afafaf 100%);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.45);
+      transition: background 180ms ease;
+      display: inline-block;
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #fdfdfd 0%, #d7d7d7 100%);
+      border: 1px solid #aaaaaa;
+      box-shadow: inset 0 1px 0 #ffffff, 0 2px 5px rgba(0, 0, 0, 0.3);
+      transition: transform 180ms ease;
+    }
+
+    .switch input:checked + .switch-track {
+      background: linear-gradient(180deg, #7c7c7c 0%, #696969 100%);
+    }
+
+    .switch input:checked + .switch-track .switch-thumb {
+      transform: translateX(20px);
+    }
+
     /* Open state */
     body.menu-open .menu-panel {
       display: block;
@@ -160,12 +315,23 @@
         right: 10px;
         width: calc(100vw - 20px);
       }
+      .generation-controls {
+        right: 10px;
+        bottom: 10px;
+        width: calc(100vw - 20px);
+      }
+      #plot-shell {
+        width: min(92vw, 420px);
+        height: 62vh;
+      }
     }
   </style>
 </head>
 
 <body>
-  <div id="attractor-plot"></div>
+  <div id="plot-shell">
+    <div id="attractor-plot"></div>
+  </div>
 
   <!-- Overlay UI -->
   <div id="site-ui">
@@ -194,6 +360,24 @@
     </div>
 
     <div id="menuBackdrop" class="menu-backdrop" aria-hidden="true"></div>
+
+    <div id="generationControls" class="generation-controls">
+      <div class="performance-row">
+        <label for="pointsSlider">PERFORMANCE</label>
+        <output id="pointsValue">300,000 pts</output>
+      </div>
+      <input id="pointsSlider" type="range" min="10000" max="1000000" step="10000" value="300000" />
+      <div class="toggle-row">
+        <div class="toggle-caption">
+          <span>GENERATION MODE</span>
+          <span id="modeLabel" class="toggle-mode">STATIC</span>
+        </div>
+        <label class="switch">
+          <input id="modeToggle" type="checkbox" aria-label="Toggle animation generation mode" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -223,10 +407,18 @@
       } catch (e) { return false; }
     }
     var webglAvailable = isWebGLAvailable();
-    let numberOfPoints = webglAvailable ? 2000000 : 200000;
+    const defaultPoints = webglAvailable ? 300000 : 100000;
+    let numberOfPoints = defaultPoints;
     let minBatchSize = 1000;
     let maxBatchSize = 5000;
     let timeoutInterval = 10;
+    let generationMode = "static"; // "static" | "animation"
+    const animatedParamKeys = ["a", "b", "c", "d"];
+    let animatedParamIndex = Math.floor(Math.random() * animatedParamKeys.length);
+    let animatedDirection = Math.random() < 0.5 ? 1 : -1;
+    const animatedStep = 0.002;
+    let runId = 0;
+    let activeDrawId = 0;
 
     // Layout with disabled hover
     let layout = {
@@ -242,6 +434,36 @@
     let currentIndex = 0;
     let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
 
+    function formatPoints(value) {
+      return Number(value).toLocaleString("en-US");
+    }
+
+    function pickAnimatedVariable() {
+      animatedParamIndex = Math.floor(Math.random() * animatedParamKeys.length);
+      const key = animatedParamKeys[animatedParamIndex];
+      const minLimit = initParams[key] * 0.9;
+      const maxLimit = initParams[key] * 1.1;
+      if (params[key] <= minLimit) animatedDirection = 1;
+      else if (params[key] >= maxLimit) animatedDirection = -1;
+      else animatedDirection = Math.random() < 0.5 ? 1 : -1;
+    }
+
+    function stepAnimatedParameters() {
+      const key = animatedParamKeys[animatedParamIndex];
+      const minLimit = initParams[key] * 0.9;
+      const maxLimit = initParams[key] * 1.1;
+      params[key] += animatedStep * animatedDirection;
+      if (params[key] > maxLimit || params[key] < minLimit) {
+        params[key] = Math.max(minLimit, Math.min(maxLimit, params[key]));
+        pickAnimatedVariable();
+      }
+    }
+
+    function restartGeneration() {
+      clearTimeout(animationTimeout);
+      startAnimation(params);
+    }
+
     function showPlotError(msg) {
       const plotContainer = document.getElementById("attractor-plot");
       if (!plotContainer) return;
@@ -250,67 +472,73 @@
 
     // Start animation (uses a Worker to generate points)
     function startAnimation(params) {
+      const thisRunId = ++runId;
       if (typeof Plotly === "undefined") {
         showPlotError("Chart library still loading... Refresh if this doesn't go away.");
         return;
       }
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          if (thisRunId !== runId) return;
           const plotContainer = document.getElementById("attractor-plot");
           if (!plotContainer) return;
           plotContainer.innerHTML = "";
 
-            function initPlot() {
-              try {
-                var trace = webglAvailable
-                  ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
-                  : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
-                Plotly.newPlot("attractor-plot", [trace], layout, { displayModeBar: false });
-                currentIndex = 0;
-                animatePlot();
-              } catch (err) {
-                showPlotError("Something went wrong. Try refreshing the page.");
-                console.error(err);
-              }
+          function initPlot() {
+            if (thisRunId !== runId) return;
+            try {
+              var trace = webglAvailable
+                ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
+                : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
+              Plotly.newPlot("attractor-plot", [trace], layout, { displayModeBar: false });
+              currentIndex = 0;
+              activeDrawId = thisRunId;
+              animatePlot(thisRunId);
+            } catch (err) {
+              showPlotError("Something went wrong. Try refreshing the page.");
+              console.error(err);
             }
+          }
 
-            if (window.Worker) {
-              try {
-                const workerCode = `
-                  self.onmessage = function(e) {
-                    const { params, numberOfPoints } = e.data;
-                    let x = 0, y = 0;
-                    let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
-                    for (let i = 0; i < numberOfPoints; i++) {
-                      const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
-                      const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
-                      out.x[i] = nx;
-                      out.y[i] = ny;
-                      x = nx; y = ny;
-                    }
-                    self.postMessage(out);
+          if (window.Worker) {
+            try {
+              const workerCode = `
+                self.onmessage = function(e) {
+                  const { params, numberOfPoints } = e.data;
+                  let x = 0, y = 0;
+                  let out = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+                  for (let i = 0; i < numberOfPoints; i++) {
+                    const nx = Math.sin(params.a * y) + params.c * Math.cos(params.a * x);
+                    const ny = Math.sin(params.b * x) + params.d * Math.cos(params.b * y);
+                    out.x[i] = nx;
+                    out.y[i] = ny;
+                    x = nx; y = ny;
                   }
-                `;
-                const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
-                worker.onerror = function () {
-                  worker.terminate();
-                  generatePoints(params);
-                  initPlot();
-                };
-                worker.onmessage = function (e) {
-                  data = e.data;
-                  worker.terminate();
-                  initPlot();
-                };
-                worker.postMessage({ params, numberOfPoints });
-              } catch (err) {
+                  self.postMessage(out);
+                }
+              `;
+              const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
+              worker.onerror = function () {
+                worker.terminate();
+                if (thisRunId !== runId) return;
                 generatePoints(params);
                 initPlot();
-              }
-            } else {
+              };
+              worker.onmessage = function (e) {
+                worker.terminate();
+                if (thisRunId !== runId) return;
+                data = e.data;
+                initPlot();
+              };
+              worker.postMessage({ params, numberOfPoints });
+            } catch (err) {
               generatePoints(params);
               initPlot();
             }
+          } else {
+            generatePoints(params);
+            initPlot();
+          }
         });
       });
     }
@@ -327,7 +555,8 @@
       }
     }
 
-    function animatePlot() {
+    function animatePlot(animationRunId) {
+      if (animationRunId !== activeDrawId) return;
       if (isPaused) return;
       if (typeof Plotly === "undefined") return;
 
@@ -350,19 +579,42 @@
         }
         currentIndex += pointsToAdd;
 
-        animationTimeout = setTimeout(animatePlot, timeoutInterval);
+        animationTimeout = setTimeout(() => animatePlot(animationRunId), timeoutInterval);
       } else {
-        params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
+        if (generationMode === "animation") {
+          stepAnimatedParameters();
+        } else {
+          params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
+        }
         startAnimation(params);
       }
     }
 
+    function updatePlotScaleFromScroll() {
+      const plotShell = document.getElementById("plot-shell");
+      if (!plotShell) return;
+      const maxScroll = Math.max(window.innerHeight, document.documentElement.scrollHeight - window.innerHeight);
+      const progress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
+      const scale = 1 + progress * 2; // 1x to 3x
+      plotShell.style.setProperty("--plot-scale", scale.toFixed(4));
+    }
+
+    let scrollTicking = false;
+    window.addEventListener("scroll", () => {
+      if (scrollTicking) return;
+      scrollTicking = true;
+      requestAnimationFrame(() => {
+        updatePlotScaleFromScroll();
+        scrollTicking = false;
+      });
+    }, { passive: true });
 
     // Resize plot on window resize
     window.addEventListener("resize", () => {
       if (typeof Plotly !== "undefined" && document.getElementById("attractor-plot")) {
         try { Plotly.Plots.resize("attractor-plot"); } catch (e) {}
       }
+      updatePlotScaleFromScroll();
     });
 
     // Start only when Plotly is ready (avoids race where script runs before CDN finishes)
@@ -391,6 +643,45 @@
     } else {
       runWhenReady();
     }
+
+    (function setupGenerationControls() {
+      const pointsSlider = document.getElementById("pointsSlider");
+      const pointsValue = document.getElementById("pointsValue");
+      const modeToggle = document.getElementById("modeToggle");
+      const modeLabel = document.getElementById("modeLabel");
+      if (!pointsSlider || !pointsValue || !modeToggle || !modeLabel) return;
+
+      function updatePointsLabel() {
+        pointsValue.textContent = formatPoints(numberOfPoints) + " pts";
+      }
+
+      function updateModeLabel() {
+        modeLabel.textContent = generationMode === "animation" ? "ANIMATION" : "STATIC";
+      }
+
+      numberOfPoints = Number(pointsSlider.value) || defaultPoints;
+      updatePointsLabel();
+      updateModeLabel();
+      updatePlotScaleFromScroll();
+
+      pointsSlider.addEventListener("input", () => {
+        const nextPoints = Number(pointsSlider.value);
+        if (!Number.isFinite(nextPoints)) return;
+        numberOfPoints = Math.max(10000, Math.min(1000000, Math.floor(nextPoints)));
+        updatePointsLabel();
+      });
+
+      pointsSlider.addEventListener("change", () => {
+        restartGeneration();
+      });
+
+      modeToggle.addEventListener("change", () => {
+        generationMode = modeToggle.checked ? "animation" : "static";
+        if (generationMode === "animation") pickAnimatedVariable();
+        updateModeLabel();
+        restartGeneration();
+      });
+    })();
 
     // --- Menu overlay wiring ---
     (function setupMenuOverlay() {
