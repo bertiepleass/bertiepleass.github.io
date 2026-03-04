@@ -13,7 +13,7 @@
       min-height: 180vh;
       overflow-x: hidden;
       overflow-y: auto;
-      background: #f4f4f4;
+      background: #ffffff;
     }
 
     #plot-shell {
@@ -33,6 +33,11 @@
     #attractor-plot {
       width: 100%;
       height: 100%;
+      pointer-events: none;
+    }
+
+    #attractor-plot * {
+      pointer-events: none !important;
     }
 
     /* --- Landing page overlay UI --- */
@@ -158,11 +163,10 @@
       bottom: 14px;
       z-index: 3;
       width: min(360px, calc(100vw - 28px));
-      border-radius: 16px;
-      background: linear-gradient(180deg, #d8d8d8 0%, #c9c9c9 100%);
-      border: 1px solid #bdbdbd;
-      box-shadow: inset 0 1px 0 #efefef, inset 0 -1px 0 #b2b2b2, 0 14px 30px rgba(0, 0, 0, 0.2);
-      padding: 12px 14px;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      padding: 0;
     }
 
     .performance-row {
@@ -183,6 +187,15 @@
       letter-spacing: 0;
       font-weight: 600;
       color: #5d5d5d;
+    }
+
+    .performance-meta {
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #595959;
+      letter-spacing: 0.2px;
+      text-shadow: 0 1px 0 #ececec;
     }
 
     #pointsSlider {
@@ -367,6 +380,7 @@
         <output id="pointsValue">300,000 pts</output>
       </div>
       <input id="pointsSlider" type="range" min="10000" max="1000000" step="10000" value="300000" />
+      <div class="performance-meta" id="fpsValue">FPS: -- / target 5</div>
       <div class="toggle-row">
         <div class="toggle-caption">
           <span>GENERATION MODE</span>
@@ -409,9 +423,13 @@
     var webglAvailable = isWebGLAvailable();
     const defaultPoints = webglAvailable ? 300000 : 100000;
     let numberOfPoints = defaultPoints;
+    const minPoints = 10000;
+    const maxPoints = 1000000;
     let minBatchSize = 1000;
     let maxBatchSize = 5000;
     let timeoutInterval = 10;
+    const animationFrameInterval = 33;
+    const targetAnimationFps = 5;
     let generationMode = "static"; // "static" | "animation"
     const animatedParamKeys = ["a", "b", "c", "d"];
     let animatedParamIndex = Math.floor(Math.random() * animatedParamKeys.length);
@@ -428,14 +446,73 @@
       hovermode: false,
       autosize: true,
     };
+    const plotConfig = { displayModeBar: false, staticPlot: true, scrollZoom: false };
 
     let isPaused = false;
     let animationTimeout;
     let currentIndex = 0;
     let data = { x: new Float32Array(numberOfPoints), y: new Float32Array(numberOfPoints) };
+    let pointsSliderEl = null;
+    let pointsValueEl = null;
+    let modeLabelEl = null;
+    let fpsValueEl = null;
+    let lastAnimationFrameTimestamp = 0;
+    let smoothedAnimationFps = 0;
+    let lastAutoTuneTimestamp = 0;
 
     function formatPoints(value) {
       return Number(value).toLocaleString("en-US");
+    }
+
+    function updatePointsLabel() {
+      if (!pointsValueEl) return;
+      pointsValueEl.textContent = formatPoints(numberOfPoints) + " pts";
+    }
+
+    function updateModeLabel() {
+      if (!modeLabelEl) return;
+      modeLabelEl.textContent = generationMode === "animation" ? "ANIMATION" : "STATIC";
+    }
+
+    function updateFpsLabel() {
+      if (!fpsValueEl) return;
+      if (generationMode !== "animation" || !Number.isFinite(smoothedAnimationFps) || smoothedAnimationFps <= 0) {
+        fpsValueEl.textContent = "FPS: -- / target " + targetAnimationFps;
+        return;
+      }
+      fpsValueEl.textContent = "FPS: " + smoothedAnimationFps.toFixed(1) + " / target " + targetAnimationFps;
+    }
+
+    function resetAnimationMonitoring() {
+      lastAnimationFrameTimestamp = 0;
+      smoothedAnimationFps = 0;
+      lastAutoTuneTimestamp = 0;
+      updateFpsLabel();
+    }
+
+    function monitorAnimationAndAutoTune() {
+      if (generationMode !== "animation") return;
+      const now = performance.now();
+      if (lastAnimationFrameTimestamp > 0) {
+        const frameMs = Math.max(1, now - lastAnimationFrameTimestamp);
+        const instantFps = 1000 / frameMs;
+        smoothedAnimationFps = smoothedAnimationFps > 0
+          ? smoothedAnimationFps * 0.75 + instantFps * 0.25
+          : instantFps;
+      }
+      lastAnimationFrameTimestamp = now;
+      updateFpsLabel();
+
+      if (smoothedAnimationFps > 0 && smoothedAnimationFps < targetAnimationFps && numberOfPoints > minPoints) {
+        if ((now - lastAutoTuneTimestamp) >= 900) {
+          lastAutoTuneTimestamp = now;
+          const scaledStep = Math.round((numberOfPoints * 0.08) / 10000) * 10000;
+          const decrement = Math.max(10000, scaledStep);
+          numberOfPoints = Math.max(minPoints, numberOfPoints - decrement);
+          if (pointsSliderEl) pointsSliderEl.value = String(numberOfPoints);
+          updatePointsLabel();
+        }
+      }
     }
 
     function pickAnimatedVariable() {
@@ -461,6 +538,7 @@
 
     function restartGeneration() {
       clearTimeout(animationTimeout);
+      activeDrawId = -1;
       startAnimation(params);
     }
 
@@ -473,6 +551,7 @@
     // Start animation (uses a Worker to generate points)
     function startAnimation(params) {
       const thisRunId = ++runId;
+      activeDrawId = -1;
       if (typeof Plotly === "undefined") {
         showPlotError("Chart library still loading... Refresh if this doesn't go away.");
         return;
@@ -487,13 +566,36 @@
           function initPlot() {
             if (thisRunId !== runId) return;
             try {
+              var renderFullFrame = generationMode === "animation";
               var trace = webglAvailable
-                ? { x: [], y: [], type: "pointcloud", marker: { size: 3, color: "black" } }
-                : { x: [], y: [], type: "scatter", mode: "markers", marker: { size: 2, color: "black" } };
-              Plotly.newPlot("attractor-plot", [trace], layout, { displayModeBar: false });
-              currentIndex = 0;
-              activeDrawId = thisRunId;
-              animatePlot(thisRunId);
+                ? {
+                  x: renderFullFrame ? Array.from(data.x) : [],
+                  y: renderFullFrame ? Array.from(data.y) : [],
+                  type: "pointcloud",
+                  marker: { size: 3, color: "black" }
+                }
+                : {
+                  x: renderFullFrame ? Array.from(data.x) : [],
+                  y: renderFullFrame ? Array.from(data.y) : [],
+                  type: "scatter",
+                  mode: "markers",
+                  marker: { size: 2, color: "black" }
+                };
+              Promise.resolve(Plotly.newPlot("attractor-plot", [trace], layout, plotConfig)).then(() => {
+                if (thisRunId !== runId) return;
+                currentIndex = 0;
+                if (renderFullFrame) {
+                  monitorAnimationAndAutoTune();
+                  animationTimeout = setTimeout(() => {
+                    if (thisRunId !== runId) return;
+                    stepAnimatedParameters();
+                    startAnimation(params);
+                  }, animationFrameInterval);
+                } else {
+                  activeDrawId = thisRunId;
+                  animatePlot(thisRunId);
+                }
+              });
             } catch (err) {
               showPlotError("Something went wrong. Try refreshing the page.");
               console.error(err);
@@ -581,11 +683,7 @@
 
         animationTimeout = setTimeout(() => animatePlot(animationRunId), timeoutInterval);
       } else {
-        if (generationMode === "animation") {
-          stepAnimatedParameters();
-        } else {
-          params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
-        }
+        params = alterParameters(initParams.a, initParams.b, initParams.c, initParams.d);
         startAnimation(params);
       }
     }
@@ -645,38 +743,33 @@
     }
 
     (function setupGenerationControls() {
-      const pointsSlider = document.getElementById("pointsSlider");
-      const pointsValue = document.getElementById("pointsValue");
+      pointsSliderEl = document.getElementById("pointsSlider");
+      pointsValueEl = document.getElementById("pointsValue");
       const modeToggle = document.getElementById("modeToggle");
-      const modeLabel = document.getElementById("modeLabel");
-      if (!pointsSlider || !pointsValue || !modeToggle || !modeLabel) return;
+      modeLabelEl = document.getElementById("modeLabel");
+      fpsValueEl = document.getElementById("fpsValue");
+      if (!pointsSliderEl || !pointsValueEl || !modeToggle || !modeLabelEl || !fpsValueEl) return;
 
-      function updatePointsLabel() {
-        pointsValue.textContent = formatPoints(numberOfPoints) + " pts";
-      }
-
-      function updateModeLabel() {
-        modeLabel.textContent = generationMode === "animation" ? "ANIMATION" : "STATIC";
-      }
-
-      numberOfPoints = Number(pointsSlider.value) || defaultPoints;
+      numberOfPoints = Number(pointsSliderEl.value) || defaultPoints;
       updatePointsLabel();
       updateModeLabel();
+      updateFpsLabel();
       updatePlotScaleFromScroll();
 
-      pointsSlider.addEventListener("input", () => {
-        const nextPoints = Number(pointsSlider.value);
+      pointsSliderEl.addEventListener("input", () => {
+        const nextPoints = Number(pointsSliderEl.value);
         if (!Number.isFinite(nextPoints)) return;
-        numberOfPoints = Math.max(10000, Math.min(1000000, Math.floor(nextPoints)));
+        numberOfPoints = Math.max(minPoints, Math.min(maxPoints, Math.floor(nextPoints)));
         updatePointsLabel();
       });
 
-      pointsSlider.addEventListener("change", () => {
+      pointsSliderEl.addEventListener("change", () => {
         restartGeneration();
       });
 
       modeToggle.addEventListener("change", () => {
         generationMode = modeToggle.checked ? "animation" : "static";
+        resetAnimationMonitoring();
         if (generationMode === "animation") pickAnimatedVariable();
         updateModeLabel();
         restartGeneration();
