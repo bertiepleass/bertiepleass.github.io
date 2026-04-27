@@ -31,3 +31,16 @@ test("menu opens, closes, and navigates from panel link", async ({ page }) => {
     page.click('#menuPanel a[href="clifford.html"]'),
   ]);
 });
+
+test("lighting archive link opens the captured Squarespace site", async ({ page }) => {
+  await page.goto("/");
+
+  await page.click("#menuButton");
+  await Promise.all([
+    page.waitForURL(/\/lighting\/$/),
+    page.click('#menuPanel a[href="lighting/"]'),
+  ]);
+
+  await expect(page).toHaveTitle(/BERTIEPLEASS/);
+  await expect(page.locator('a[href="/lighting/angle-poise/"]')).toBeVisible();
+});
